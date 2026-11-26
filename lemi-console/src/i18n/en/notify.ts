@@ -1,0 +1,17 @@
+export default {
+  channels: 'Notification channels', channelsIntro: 'Backup plans, health checks and scheduled tasks pick channels from here when they notify. Each channel can also subscribe to only some events. Secret fields (tokens in URLs, passwords, signing secrets) are write-only and are not shown after saving.',
+  new: 'New channel', edit: 'Edit channel', empty: 'No notification channels yet', kind: 'Type', chooseKind: 'Choose a channel type',
+  events: 'Subscribed events', eventsAll: 'All events', eventsHelp: 'Leave all unchecked to receive every event. Backup plans, health checks and others still need to select this channel.',
+  test: 'Send test', testing: 'Sending…', testOk: 'Sent ({ms} ms)', testFailed: 'Failed: {e}',
+  deleteConfirm: 'Delete channel "{name}"? Backup plans and health checks using it will no longer notify through it.',
+  secretKept: 'Set. Leave empty to keep it', clearSecret: 'Clear', urlHost: 'Host',
+  logs: 'Delivery log', logsEmpty: 'Nothing sent yet', attempts: '{n} attempts',
+  logStatus: { sending: 'Sending', ok: 'Sent', failed: 'Failed' },
+  pickChannels: 'Choose channels', noChannels: 'No notification channels yet', manageChannels: 'Manage channels', none: 'No notification',
+  smtp: 'System mail server', smtpIntro: 'Used for password recovery, security alerts (account locked, new device sign-in, password changed, two-step verification turned off) and email channels that use the system mail server.',
+  smtpHost: 'SMTP host', smtpPort: 'Port', smtpTls: 'Encryption', smtpUser: 'Username', smtpPass: 'Password', smtpFrom: 'From',
+  tls: { ssl: 'SSL / TLS (usually 465)', starttls: 'STARTTLS (usually 587)', none: 'None (password-less internal relays only)' },
+  smtpTest: 'Send test mail', smtpTestTo: 'To', smtpTestToPh: 'Empty sends to your own email', smtpSent: 'Test mail sent', smtpNotSet: 'Not configured', smtpClear: 'Clear',
+  smtpClearConfirm: 'Clear the system mail server? Security alerts will no longer be sent.',
+  personal: 'Security alerts go to the email address on your account. Change it under Account.',
+}

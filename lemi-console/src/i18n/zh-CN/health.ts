@@ -1,0 +1,16 @@
+export default {
+  title: '健康检查',
+  intro: '定时连接每个数据库（经 SSH 隧道 / 代理）并执行 SELECT 1，记录延迟与错误。连续失败达到阈值判定下线，一次成功即恢复；只在状态变化时发通知。记录保留 30 天。',
+  status: { up: '在线', down: '下线', unknown: '未知', disabled: '已关闭' },
+  pick: '从左边选一个连接', empty: '这个空间还没有连接', checkNow: '立即检查', checking: '正在检查…',
+  lastCheck: '上次检查 {t}', latency: '延迟', never: '还没有检查过',
+  range: { day: '今天', '7d': '7 天', '30d': '30 天' },
+  uptime: '可用率', checks: '检查次数', failures: '失败次数', avgLatency: '平均延迟', p95: 'P95 延迟', maxLatency: '最大延迟',
+  noData: '这段时间没有检查记录', timeline: '时间线', latencyChart: '延迟曲线', recent: '最近的检查', onlyFailed: '只看失败', loadMore: '加载更多',
+  manual: '手动', ok: '成功', fail: '失败',
+  bucket: { up: '全部成功', down: '全部失败', partial: '部分失败', none: '没有检查' },
+  config: '检查设置', enabled: '启用健康检查', interval: '间隔（秒）', timeout: '超时（秒）', threshold: '连续失败几次判定下线',
+  channels: '状态变化时通知', defaultHint: '没有单独设置，使用默认值（60 秒检查一次、超时 10 秒、连续 3 次失败下线）。',
+  intervalHelp: '10 秒到 1 天。', timeoutHelp: '1–120 秒，不能大于间隔。',
+  tree: '健康状态',
+}

@@ -740,7 +740,7 @@ internal/
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/kinds` | viewer | `{kinds:[{id,name,name_en,help,fields:[...,show_if]}], events:[{id,name,name_en}], system_smtp:bool}`；渠道类型 email、webhook、dingtalk、wecom、feishu |
-| GET / POST | `/channels` | viewer / admin | 视图 `{id,workspace_id,name,kind,enabled,created_by,created_at,updated_at}`，空间 admin 另有 `config`（不含密钥）、`secrets_set`、`url_host`；POST 请求 `{name,kind,enabled?,config,clear?}` |
+| GET / POST | `/channels` | viewer / admin | 视图 `{id,workspace_id,name,kind,enabled,events,created_by,created_at,updated_at}`，空间 admin 另有 `config`（不含密钥）、`secrets_set`、`url_host`；POST 请求 `{name,kind,enabled?,config,clear?,events?}`。`events` 是订阅的事件（空 = 全部；修改时不传保持原值），备份计划、健康检查选中渠道后，事件还要在订阅范围内才发送（测试消息总是发送） |
 | GET / PUT / DELETE | `/channels/{id}` | viewer / admin / admin | 删除渠道后发送记录保留 |
 | POST | `/channels/{id}/test` | admin | 同步发一次（不重试，结果也记录），成功 `{ok:true,latency_ms}`，失败 400 `notify_failed` |
 | POST | `/channels/test` | admin | 用未保存的表单测试 `{id?,name,kind,config,clear?}` |
