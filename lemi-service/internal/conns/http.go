@@ -740,7 +740,12 @@ func (s *Service) hHistory(srv *web.Server, w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Service) hMonitor(srv *web.Server, w http.ResponseWriter, r *http.Request) error {
-	c, _, err := s.conn(r, LevelRead)
+	// 进程列表与慢查询里有其他会话的 SQL 原文，只给连接管理者看
+	min := LevelRead
+	if what := chi.URLParam(r, "what"); what == "processes" || what == "slow" {
+		min = LevelManage
+	}
+	c, _, err := s.conn(r, min)
 	if err != nil {
 		return err
 	}

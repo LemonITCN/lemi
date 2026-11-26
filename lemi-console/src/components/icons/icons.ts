@@ -184,6 +184,7 @@ export const icons: Record<string, string> = {
   'sigma': '<path d="M17.5 5.5h-11l6 6.5-6 6.5h11"/>',
   'panel-bottom': '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 14.5h17"/>',
   'tx': '<path d="M8 4.5H6.5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1H8M16 4.5h1.5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H16"/><path d="M9.5 12h5M12 9.5v5"/>',
+  'paste': '<rect x="6.5" y="5" width="11" height="15" rx="1.5"/><path d="M9.5 5V3.8c0-.4.3-.8.8-.8h3.4c.5 0 .8.4.8.8V5M9.5 11h5M9.5 14.5h5"/>',
 }
 
 export type IconName = keyof typeof icons
