@@ -26,6 +26,9 @@ func TestLiveOpenCode(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, m := range ms {
+			t.Logf("模型 %s（%s）协议 %s 上下文 %d 推荐 %v", m.ID, m.Name, m.API, m.Context, m.Featured)
+		}
+		for _, m := range ms {
 			if m.Featured && m.Type == "chat" {
 				models = m.ID
 				break

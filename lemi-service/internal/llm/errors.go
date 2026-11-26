@@ -42,6 +42,13 @@ var (
 	overloadRe      = regexp.MustCompile(`(?i)overloaded|server[_ ]error|internal error|service unavailable|bad gateway|upstream`)
 )
 
+// anthropicTypes Anthropic 的错误类型名 → 类别。
+var anthropicTypes = map[string]ErrorKind{
+	"invalid_request_error": ErrInvalidRequest, "authentication_error": ErrAuth, "permission_error": ErrAuth, "not_found_error": ErrInvalidRequest,
+	"request_too_large": ErrRequestTooLarge, "rate_limit_error": ErrRateLimit, "api_error": ErrServer, "overloaded_error": ErrServer,
+	"billing_error": ErrQuota,
+}
+
 // IsOverflowMessage 判断错误文案是否表示上下文溢出。
 func IsOverflowMessage(msg string) bool {
 	for _, re := range overflowPatterns {
@@ -102,6 +109,15 @@ func classifyAPI(status int, code, msg string) ErrorKind {
 	text := code + " " + msg
 	if IsOverflowMessage(text) || code == "context_length_exceeded" || code == "string_above_max_length" {
 		return ErrContextOverflow
+	}
+	// Anthropic 风格的错误类型（代理会把它包在自己的文案里，例如 "Upstream request failed: [invalid_request_error] ..."）
+	for t, k := range anthropicTypes {
+		if code == t || strings.Contains(msg, "["+t+"]") || strings.HasPrefix(msg, t) {
+			if k == ErrInvalidRequest && (quotaRe.MatchString(text) || contentPolicyRe.MatchString(text)) {
+				break
+			}
+			return k
+		}
 	}
 	switch {
 	case status == 413:

@@ -3,9 +3,11 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // anthropicAdapter 实现 Anthropic Messages 协议。
@@ -18,6 +20,40 @@ type anthropicAdapter struct {
 }
 
 var effortBudget = map[string]int{"minimal": 1024, "low": 2048, "medium": 8192, "high": 16384, "xhigh": 32768, "max": 60000}
+
+// thinkingModes 记住每个模型实际接受的思考参数：adaptive（Claude 4.6 起：thinking.type=adaptive + output_config.effort，
+// budget_tokens 会被拒）或 budget（更早的 Claude 与各家兼容实现：thinking.type=enabled + budget_tokens）。
+// 先按模型名猜，供应商报错说明参数不对时换另一种重试一次并记住。
+var thinkingModes sync.Map
+
+func thinkingMode(model string) string {
+	if v, ok := thinkingModes.Load(model); ok {
+		return v.(string)
+	}
+	m := strings.ToLower(model)
+	if !strings.Contains(m, "claude") {
+		return "budget"
+	}
+	for _, old := range []string{"claude-3", "-4-5", "-4-1", "-4-0", "-4-2025", "-4@"} {
+		if strings.Contains(m, old) {
+			return "budget"
+		}
+	}
+	if strings.HasSuffix(m, "claude-opus-4") || strings.HasSuffix(m, "claude-sonnet-4") {
+		return "budget"
+	}
+	return "adaptive"
+}
+
+func adaptiveEffort(e string) string {
+	switch e {
+	case "minimal":
+		return "low"
+	case "low", "medium", "high", "xhigh", "max":
+		return e
+	}
+	return "medium"
+}
 
 func (a *anthropicAdapter) stream(ctx context.Context, req Request) (Stream, error) {
 	msgs := mergeSameRole(a.convertAll(req.Messages))
@@ -39,38 +75,68 @@ func (a *anthropicAdapter) stream(ctx context.Context, req Request) (Stream, err
 	if maxTokens <= 0 {
 		maxTokens = 16000
 	}
-	body := map[string]any{"model": req.Model, "messages": msgs, "stream": true, "max_tokens": maxTokens}
-	if req.System != "" {
-		body["system"] = []map[string]any{{"type": "text", "text": req.System, "cache_control": map[string]any{"type": "ephemeral"}}}
-	}
-	if len(req.Tools) > 0 {
-		var tools []map[string]any
-		for _, t := range req.Tools {
-			tools = append(tools, map[string]any{"name": t.Name, "description": t.Description, "input_schema": json.RawMessage(t.Schema)})
+	thinking := a.thinking && req.Effort != "" && req.Effort != "none"
+	build := func(mode string) map[string]any {
+		body := map[string]any{"model": req.Model, "messages": msgs, "stream": true, "max_tokens": maxTokens}
+		if req.System != "" {
+			body["system"] = []map[string]any{{"type": "text", "text": req.System, "cache_control": map[string]any{"type": "ephemeral"}}}
 		}
-		tools[len(tools)-1]["cache_control"] = map[string]any{"type": "ephemeral"}
-		body["tools"] = tools
-		if req.ToolChoice == "none" {
-			body["tool_choice"] = map[string]any{"type": "none"}
+		if len(req.Tools) > 0 {
+			var tools []map[string]any
+			for _, t := range req.Tools {
+				tools = append(tools, map[string]any{"name": t.Name, "description": t.Description, "input_schema": json.RawMessage(t.Schema)})
+			}
+			tools[len(tools)-1]["cache_control"] = map[string]any{"type": "ephemeral"}
+			body["tools"] = tools
+			if req.ToolChoice == "none" {
+				body["tool_choice"] = map[string]any{"type": "none"}
+			}
 		}
-	}
-	if a.thinking && req.Effort != "" && req.Effort != "none" {
-		budget := effortBudget[req.Effort]
-		if budget == 0 {
-			budget = 8192
+		switch {
+		case thinking && mode == "adaptive":
+			body["thinking"] = map[string]any{"type": "adaptive"}
+			body["output_config"] = map[string]any{"effort": adaptiveEffort(req.Effort)}
+		case thinking:
+			budget := effortBudget[req.Effort]
+			if budget == 0 {
+				budget = 8192
+			}
+			if budget >= maxTokens {
+				body["max_tokens"] = budget + 8000
+			}
+			body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
+		case req.Temperature != nil && a.temperature:
+			body["temperature"] = *req.Temperature
 		}
-		if budget >= maxTokens {
-			body["max_tokens"] = budget + 8000
-		}
-		body["thinking"] = map[string]any{"type": "enabled", "budget_tokens": budget}
-	} else if req.Temperature != nil && a.temperature {
-		body["temperature"] = *req.Temperature
+		return body
 	}
 	h := map[string]string{"anthropic-version": "2023-06-01"}
 	for k, v := range a.headers {
 		h[k] = v
 	}
-	resp, err := postStream(ctx, a.client, strings.TrimRight(a.baseURL, "/")+"/messages", h, body)
+	url := strings.TrimRight(a.baseURL, "/") + "/messages"
+	mode := thinkingMode(req.Model)
+	resp, err := postStream(ctx, a.client, url, h, build(mode))
+	if err != nil && thinking {
+		// 思考参数与模型不匹配：换另一种参数重试一次，并记住
+		var ae *APIError
+		if errors.As(err, &ae) && ae.Status == 400 {
+			low := strings.ToLower(ae.Message)
+			other := ""
+			switch {
+			case mode == "budget" && strings.Contains(low, "adaptive"):
+				other = "adaptive"
+			case mode == "adaptive" && strings.Contains(low, "thinking") && !strings.Contains(low, "budget_tokens"):
+				other = "budget"
+			case mode == "adaptive" && strings.Contains(low, "output_config"):
+				other = "budget"
+			}
+			if other != "" {
+				thinkingModes.Store(req.Model, other)
+				resp, err = postStream(ctx, a.client, url, h, build(other))
+			}
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

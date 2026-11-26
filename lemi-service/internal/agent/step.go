@@ -90,7 +90,8 @@ func (sp *stepper) streamOnce(ctx context.Context, prov llm.Provider, req llm.Re
 	sp.emit("assistant_start", map[string]any{"id": msgID})
 	assemble := func() []StoredPart {
 		var parts []StoredPart
-		if reasoning.Len() > 0 {
+		// 思考内容可能被供应商隐去（只有签名）：签名也要原样回传
+		if reasoning.Len() > 0 || sig != "" {
 			parts = append(parts, StoredPart{Part: llm.Part{Type: "reasoning", Text: reasoning.String(), Signature: sig}})
 		}
 		if strings.TrimSpace(text.String()) != "" {

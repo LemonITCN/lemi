@@ -273,3 +273,56 @@ func TestOpenCodeHeaders(t *testing.T) {
 		t.Fatalf("OpenCode Go 必带会话头与自定义 UA：%v", got)
 	}
 }
+
+func TestAnthropicThinkingModes(t *testing.T) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		bodies = append(bodies, b)
+		th, _ := b["thinking"].(map[string]any)
+		if th["type"] == "enabled" {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] \"thinking.type.enabled\" is not supported for this model. Use \"thinking.type.adaptive\" and \"output_config.effort\""}}`))
+			return
+		}
+		sse(w, `{"type":"message_start","message":{"usage":{"input_tokens":5}}}`, `{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}`, `{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`, `{"type":"message_stop"}`)
+	}))
+	defer srv.Close()
+	a := &anthropicAdapter{baseURL: srv.URL, thinking: true}
+	// 新 Claude 模型直接用 adaptive
+	s, err := a.stream(context.Background(), Request{Model: "claude-haiku-5-5", Effort: "low"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, _ := drain(t, s)
+	th := bodies[0]["thinking"].(map[string]any)
+	oc := bodies[0]["output_config"].(map[string]any)
+	if th["type"] != "adaptive" || oc["effort"] != "low" {
+		t.Fatalf("新模型应使用 adaptive 思考：%v", bodies[0])
+	}
+	sig := false
+	for _, e := range evs {
+		if e.Type == EvReasoningSig && e.Text == "sig" {
+			sig = true
+		}
+	}
+	if !sig {
+		t.Fatal("思考签名应传出")
+	}
+	// 猜成 budget 的模型报错要求 adaptive：换参数重试一次并记住
+	bodies = nil
+	if _, err := a.stream(context.Background(), Request{Model: "compat-model", Effort: "high"}); err != nil {
+		t.Fatalf("应自动换用 adaptive：%v", err)
+	}
+	if len(bodies) != 2 || thinkingMode("compat-model") != "adaptive" {
+		t.Fatalf("应重试一次并记住：%d %s", len(bodies), thinkingMode("compat-model"))
+	}
+	if thinkingMode("claude-sonnet-4-5") != "budget" || thinkingMode("qwen3.8-max") != "budget" {
+		t.Fatal("旧模型与兼容实现默认用 budget_tokens")
+	}
+	if k := Classify(&APIError{Status: 500, Message: `Upstream request failed: [invalid_request_error] bad`}).Kind; k != ErrInvalidRequest {
+		t.Fatalf("代理包装的 invalid_request_error 不应重试：%s", k)
+	}
+}
