@@ -42,6 +42,10 @@ export type Segment =
 
 const lemiRe = /^```lemi-(chart|table|diagram)[ \t]+([A-Za-z0-9]+)[ \t]*(```)?[ \t]*$/
 const fenceOpen = /^(```+|~~~+)\s*([\w-]*)/
+// 流式输出时最后一行还在写：引用块开头的任何前缀（```、```lemi-ch、```lemi-chart 01m8…）先不显示，
+// 免得拿半截 ID 去取图表，或者先闪一下代码块
+const partialLemi = /^`{1,3}(l(e(m(i(-[a-z]*([ \t]+[A-Za-z0-9]*)?)?)?)?)?)?[ \t]*$/
+const fullID = /^[0-9a-z]{26}$/i
 
 /** 把正文切成 Markdown 段、引用块与 mermaid 图（与服务端 reports.ParseBlocks 的规则一致）。 */
 export function splitBlocks(src: string): Segment[] {
@@ -54,7 +58,9 @@ export function splitBlocks(src: string): Segment[] {
   }
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].replace(/\r$/, '')
+    const last = i === lines.length - 1
     const m = lemiRe.exec(line)
+    if (last && partialLemi.test(line) && !(m && (m[3] || fullID.test(m[2])))) break
     if (m) {
       flush()
       let caption = ''

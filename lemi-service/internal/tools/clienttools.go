@@ -36,6 +36,7 @@ func init() {
 			"connection_id": str("连接 ID"),
 			"sql":           str("SQL（可多条）"),
 			"db":            str("可选：库名"),
+			"title":         str("可选：标签标题（简短说明这个查询做什么，例如「按状态统计订单」）"),
 			"reason":        str("可选：为什么要执行（写语句的审批卡片上显示）"),
 		}, "connection_id", "sql"),
 		Handler: wsRunSQL,
@@ -154,6 +155,7 @@ func wsRunSQL(env *Env, args json.RawMessage) (*Result, error) {
 		ConnectionID string `json:"connection_id"`
 		SQL          string `json:"sql"`
 		DB           string `json:"db"`
+		Title        string `json:"title"`
 		Reason       string `json:"reason"`
 	}
 	if err := bind(args, &in); err != nil {
@@ -191,12 +193,16 @@ func wsRunSQL(env *Env, args json.RawMessage) (*Result, error) {
 			}
 		}
 	}
-	out, err := env.callClient("workspace_run_sql", map[string]any{"connection_id": a.Conn.ID, "db": in.DB, "sql": in.SQL, "approved": writes > 0})
+	title := strings.TrimSpace(in.Title)
+	if r := []rune(title); len(r) > 40 {
+		title = string(r[:40])
+	}
+	out, err := env.callClient("workspace_run_sql", map[string]any{"connection_id": a.Conn.ID, "db": in.DB, "sql": in.SQL, "title": title, "approved": writes > 0})
 	if err != nil {
 		return nil, err
 	}
 	b, _ := json.Marshal(out["results"])
-	text := fmt.Sprintf("已在工作区控制台执行（标签 %v）。结果：%s", out["tab_id"], string(b))
+	text := fmt.Sprintf("已在工作区控制台执行（标签 %v「%v」）。结果：%s", out["tab_id"], out["title"], string(b))
 	return &Result{Text: text, Data: out}, nil
 }
 

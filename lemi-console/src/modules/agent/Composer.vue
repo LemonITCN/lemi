@@ -46,7 +46,14 @@ const modelItems = computed<MenuItem[]>(() => {
     }
     out.push({ label: m.name, hint: m.context ? Math.round(m.context / 1000) + 'K' : '', checked: m.ref === model.value?.ref, run: () => setSetting({ model: m.ref, effort: '' }) })
   }
-  if (!out.length) out.push({ label: t('agent.noModels'), disabled: true })
+  if (!out.length) {
+    if (agent.modelsLoading) out.push({ label: t('agent.loadingModels'), disabled: true })
+    else {
+      out.push({ label: t('agent.noModels'), disabled: true })
+      for (const e of agent.modelErrors) out.push({ label: e, disabled: true })
+      out.push({ separator: true }, { label: t('agent.reloadModels'), icon: 'refresh', run: () => agent.loadModels() })
+    }
+  }
   return out
 })
 
@@ -115,7 +122,7 @@ defineExpose({ focus: () => ta.value?.focus(), insert: (s: string) => { text.val
       <textarea ref="ta" v-model="text" rows="1" :placeholder="agent.running ? $t('agent.placeholderRunning') : $t('agent.placeholder')" @keydown="onKey" />
       <div class="bar">
         <Menu :items="modelItems" :width="260" side="top">
-          <button class="pill" :title="$t('agent.model')"><Icon name="sparkle" :size="13" /><span class="lm-ellipsis">{{ model?.name || $t('agent.noModels') }}</span><Icon name="chevron-down" :size="11" /></button>
+          <button class="pill" :title="$t('agent.model')"><Icon name="sparkle" :size="13" /><span class="lm-ellipsis">{{ model?.name || (agent.modelsLoading ? $t('agent.loadingModels') : $t('agent.noModels')) }}</span><Icon name="chevron-down" :size="11" /></button>
         </Menu>
         <Menu v-if="efforts.length" :items="effortItems" :width="160" side="top">
           <button class="pill" :title="$t('agent.effort.label')"><span>{{ settings.effort ? $t('agent.effort.' + settings.effort, settings.effort) : $t('agent.effort.default') }}</span><Icon name="chevron-down" :size="11" /></button>

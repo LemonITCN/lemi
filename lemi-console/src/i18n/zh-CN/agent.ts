@@ -7,7 +7,7 @@ export default {
   emptyTitle: '数据分析智能体',
   emptyDesc: '描述要解决的问题，它会先摸清表结构，再查询、汇总、画图，最后写成报告。写入会按连接的 AI 档位请你确认。',
   placeholder: '描述你要分析的问题…', placeholderRunning: '补充说明会在下一步插入…',
-  model: '模型', noModels: '没有可用的模型', send: '发送', stop: '停止',
+  model: '模型', noModels: '没有可用的模型', loadingModels: '正在加载模型…', reloadModels: '重新加载模型列表', send: '发送', stop: '停止',
   steer: '现在插入（下一步生效）', queue: '排队到本轮结束后',
   planMode: '计划模式', planModeHint: '只读分析：可以查询和分析，不执行任何写入或 DDL，先给出方案。',
   effort: { label: '思考档位', default: '默认思考', none: '不思考', minimal: '极少', low: '少量思考', medium: '中等思考', high: '深入思考', xhigh: '更深入', max: '最大' },

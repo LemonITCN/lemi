@@ -7,7 +7,7 @@ export default {
   emptyTitle: 'Data analysis agent',
   emptyDesc: 'Describe the problem. It explores the schema first, then queries, aggregates and charts, and writes up a report. Writes ask for your approval according to each connection\'s AI level.',
   placeholder: 'Describe what you want to analyze…', placeholderRunning: 'Follow-ups are inserted at the next step…',
-  model: 'Model', noModels: 'No models available', send: 'Send', stop: 'Stop',
+  model: 'Model', noModels: 'No models available', loadingModels: 'Loading models…', reloadModels: 'Reload model list', send: 'Send', stop: 'Stop',
   steer: 'Insert now (next step)', queue: 'Queue until this turn ends',
   planMode: 'Plan mode', planModeHint: 'Read-only analysis: it can query and analyze but runs no writes or DDL, and proposes a plan first.',
   effort: { label: 'Reasoning', default: 'Default', none: 'No reasoning', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' },

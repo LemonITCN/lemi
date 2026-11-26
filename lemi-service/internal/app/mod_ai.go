@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/LemonITCN/lemi/lemi-service/internal/accounts"
@@ -90,6 +91,16 @@ func init() {
 			close(done)
 		}
 		defer func() { <-done }()
+		// 启动后先在后台取一次模型列表，第一次打开智能体面板不用等上游
+		if ag, ok := a.Get("agent").(*agent.Service); ok {
+			go func() {
+				wctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+				defer cancel()
+				if _, errs := ag.AllModels(wctx); len(errs) > 0 {
+					a.Log.Warn("预取模型列表失败", "err", strings.Join(errs, "；"))
+				}
+			}()
+		}
 		res, _ := a.Get("results").(*results.Store)
 		oa, _ := a.Get("oauth").(*oauth.Service)
 		t := time.NewTicker(time.Hour)

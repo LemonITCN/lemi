@@ -166,7 +166,7 @@ export const workspace_run_sql = wrap(async (a: RunSQLArgs) => {
   const s = readTabState(tab.id) || {}
   const raw: any[] = Array.isArray(out) ? out : []
   return {
-    tab_id: tab.id, connection_id: c.id, db: s.db, in_tx: !!s.in_tx,
+    tab_id: tab.id, title: tab.title, connection_id: c.id, db: s.db, in_tx: !!s.in_tx,
     results: (s.results || []).map((r: any, i: number) => ({ kind: r.kind, statement: r.statement, columns: r.columns || [], rows_loaded: r.rows_loaded || 0,
       affected: r.affected || 0, error: r.error || undefined, duration_ms: r.duration_ms ?? raw[i]?.duration_ms ?? 0, sample: clipRows(r.sample, SAMPLE_ROWS) })),
   }

@@ -38,6 +38,7 @@ export const useAgent = defineStore('agent', () => {
   const defaultModel = ref('')
   const configured = ref(true)
   const modelErrors = ref<string[]>([])
+  const modelsLoading = ref(false)
   const loading = ref(false)
 
   const running = computed(() => !!runId.value && !DONE_STATES.includes(runState.value))
@@ -49,7 +50,8 @@ export const useAgent = defineStore('agent', () => {
 
   // ---------- 模型 ----------
   async function loadModels() {
-    if (!wsId.value) return
+    if (!wsId.value || modelsLoading.value) return
+    modelsLoading.value = true
     try {
       const r = await api.get(`/workspaces/${wsId.value}/ai/models`)
       models.value = r.models || []
@@ -58,6 +60,8 @@ export const useAgent = defineStore('agent', () => {
       modelErrors.value = r.errors || []
     } catch (e) {
       modelErrors.value = [errorText(e)]
+    } finally {
+      modelsLoading.value = false
     }
   }
 
@@ -417,7 +421,7 @@ export const useAgent = defineStore('agent', () => {
 
   return {
     conversations, listLoaded, convId, conv, messages, todos, usage, summary, runId, runState, runError, draft, pending, subagents, notice, retrying,
-    compacting, queuedTexts, models, defaultModel, configured, modelErrors, loading, running,
+    compacting, queuedTexts, models, defaultModel, configured, modelErrors, modelsLoading, loading, running,
     loadModels, loadList, open, newChat, create, patch, remove, send, stop, respond, reloadMessages, restore,
   }
 })
