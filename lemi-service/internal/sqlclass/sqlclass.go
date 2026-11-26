@@ -401,9 +401,29 @@ func tableRefs(ts []token) ([]TableRef, bool) {
 		}
 		return "", a, i + 1, true
 	}
+	// 括号栈：记录每层括号前面的函数名，EXTRACT(YEAR FROM x)、TRIM(… FROM x)、SUBSTRING(x FROM 2) 里的 FROM 不是表引用
+	var parens []string
 	for i := 0; i < len(ts); i++ {
 		t := ts[i]
+		if t.t == 'p' {
+			switch t.v {
+			case "(":
+				fn := ""
+				if i > 0 && ts[i-1].t == 'w' {
+					fn = ts[i-1].v
+				}
+				parens = append(parens, fn)
+			case ")":
+				if len(parens) > 0 {
+					parens = parens[:len(parens)-1]
+				}
+			}
+			continue
+		}
 		if t.t != 'w' {
+			continue
+		}
+		if t.v == "FROM" && len(parens) > 0 && fromFuncs[parens[len(parens)-1]] {
 			continue
 		}
 		switch t.v {
@@ -453,6 +473,71 @@ func tableRefs(ts []token) ([]TableRef, bool) {
 		}
 	}
 	return refs, complete
+}
+
+// fromFuncs 参数里可以出现 FROM 关键字的函数。
+var fromFuncs = map[string]bool{"EXTRACT": true, "TRIM": true, "SUBSTRING": true, "SUBSTR": true, "POSITION": true, "OVERLAY": true}
+
+// CTENames 返回语句里 WITH 定义的公共表表达式名（表引用里出现它们时不是真实的表）。
+func CTENames(sql, dialect string) []string {
+	ts := tokenize(sql, dialect)
+	skip := func(j int) int { // ts[j] 是 "("，返回匹配的 ")" 之后的位置
+		depth := 0
+		for ; j < len(ts); j++ {
+			if ts[j].t == 'p' && ts[j].v == "(" {
+				depth++
+			} else if ts[j].t == 'p' && ts[j].v == ")" {
+				depth--
+				if depth == 0 {
+					return j + 1
+				}
+			}
+		}
+		return j
+	}
+	var out []string
+	for i := 0; i < len(ts); i++ {
+		if !isWord(ts[i], "WITH") {
+			continue
+		}
+		j := i + 1
+		if j < len(ts) && isWord(ts[j], "RECURSIVE") {
+			j++
+		}
+		for j < len(ts) {
+			name := ""
+			if ts[j].t == 'q' {
+				name = ts[j].v
+			} else if ts[j].t == 'w' && !reserved[ts[j].v] {
+				name = ts[j].raw
+			}
+			if name == "" {
+				break
+			}
+			j++
+			if j < len(ts) && ts[j].t == 'p' && ts[j].v == "(" {
+				j = skip(j)
+			}
+			if j >= len(ts) || !isWord(ts[j], "AS") {
+				break
+			}
+			j++
+			for j < len(ts) && isWord(ts[j], "NOT", "MATERIALIZED") {
+				j++
+			}
+			if j >= len(ts) || ts[j].t != 'p' || ts[j].v != "(" {
+				break
+			}
+			j = skip(j)
+			out = append(out, name)
+			if j < len(ts) && ts[j].t == 'p' && ts[j].v == "," {
+				j++
+				continue
+			}
+			break
+		}
+	}
+	return out
 }
 
 var reserved = func() map[string]bool {
