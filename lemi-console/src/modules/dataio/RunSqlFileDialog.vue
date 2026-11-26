@@ -98,7 +98,10 @@ async function run() {
     off = null
     ctrl = null
     phase.value = 'done'
-    conns.invalidate(props.conn.id)
+    // 文件可能建了库、表：刷新对象树（不清空缓存，免得已展开的节点闪掉）
+    conns.loadDatabases(props.conn.id, true).catch(() => {})
+    const db = mysql.value ? target.value : props.database
+    if (db) conns.loadObjects(props.conn.id, db, true).catch(() => {})
   }
 }
 
@@ -142,7 +145,7 @@ function abort() { ctrl?.abort() }
       </div>
       <div v-if="phase === 'running' && prog.table" class="lm-faint cur lm-ellipsis">{{ $t('dataio.currentTable', { t: prog.table }) }}</div>
       <div v-if="phase === 'done' && res && !failMsg" class="meta">
-        <span class="lm-badge">{{ $t('dataio.sourceFormat') }} · {{ $t('dataio.formatNames.' + (['lemi', 'navicat', 'mysqldump'].includes(res.format) ? res.format : 'unknown')) }}</span>
+        <span v-if="['lemi', 'navicat', 'mysqldump'].includes(res.format)" class="lm-badge">{{ $t('dataio.sourceFormat') }} · {{ $t('dataio.formatNames.' + res.format) }}</span>
         <span v-if="!res.complete" class="lm-badge warning">{{ $t('dataio.incomplete') }}</span>
       </div>
       <div v-if="failMsg" class="fail"><Icon name="error" :size="16" /><span>{{ failMsg }}</span></div>
