@@ -1,6 +1,6 @@
 package target
 
-// SMB（Windows 共享、群晖 / 威联通等 NAS 的 SMB 共享）基于 github.com/hirochachacha/go-smb2（SMB 2/3，NTLM 认证）。
+// SMB（Windows 共享、群晖 / 威联通等 NAS 的 SMB 共享）基于 github.com/cloudsoda/go-smb2（SMB 2/3，NTLM 认证）。
 // 经 Deps.Dial 拿到 TCP 连接后握手、挂载共享；一个目标共用一条会话（go-smb2 支持同一会话上并发请求），
 // 连接断开后下次操作自动重连，幂等操作重连后再试一次。
 // 写入：同目录临时名（~$xxxx.tmp）→ 写完核对大小 → 改名。go-smb2 的改名不覆盖已存在的文件，目标已存在时
@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hirochachacha/go-smb2"
+	"github.com/cloudsoda/go-smb2"
 )
 
 // SMBConfig 是 SMB 共享的配置。
@@ -106,7 +106,7 @@ func (t *smbTarget) connect(ctx context.Context) (*smb2.Share, error) {
 		return nil, fmt.Errorf("连接 SMB 服务器 %s 失败：%s", t.addr, netErrText(ctxErr(ctx, err)))
 	}
 	d := &smb2.Dialer{Initiator: &smb2.NTLMInitiator{User: t.user, Password: t.pw, Domain: t.domain}}
-	s, err := d.DialContext(dctx, conn)
+	s, err := d.DialConn(dctx, conn, t.addr)
 	if err != nil {
 		conn.Close()
 		if ctx.Err() != nil {
@@ -226,9 +226,8 @@ func smbStatus(err error) uint32 {
 }
 
 func smbErrText(err error) string {
-	var ce *smb2.ContextError
-	if errors.As(err, &ce) {
-		return netErrText(ce.Err)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return netErrText(err)
 	}
 	var te *smb2.TransportError
 	if errors.As(err, &te) {

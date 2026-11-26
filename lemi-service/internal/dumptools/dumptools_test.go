@@ -266,7 +266,8 @@ func TestInstall(t *testing.T) {
 	if tool.Version != "8.4.13.1" || !strings.HasPrefix(tool.Mysqldump, m.Dir) {
 		t.Fatalf("%+v", tool)
 	}
-	if fi, _ := os.Stat(tool.Mysqldump); fi.Mode()&0o100 == 0 {
+	// Windows 没有执行权限位
+	if fi, _ := os.Stat(tool.Mysqldump); runtime.GOOS != "windows" && fi.Mode()&0o100 == 0 {
 		t.Fatal("程序没有执行权限")
 	}
 	// 再次解析不重复下载

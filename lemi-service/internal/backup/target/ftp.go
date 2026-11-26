@@ -570,15 +570,41 @@ func (t *ftpTarget) Put(ctx context.Context, p string, r io.Reader, size int64) 
 }
 
 // removeLater 用独立的短超时上下文换一条连接删除临时文件（尽力而为）。
+// 上传被中断时，服务器那边原来的连接可能还没关掉文件；Windows 上的 FTP 服务器这时删不掉（文件被占用），
+// 所以删除失败时稍等再试几次。
 func (t *ftpTarget) removeLater(ctx context.Context, tmp string) {
 	c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	_ = t.with(c, true, func(fc *ftpConn) error {
-		if err := fc.sc.Delete(tmp); err != nil && isFTPConnErr(err) {
-			return err
+	wait := 100 * time.Millisecond
+	for attempt := 0; attempt < 5; attempt++ {
+		gone := false
+		_ = t.with(c, true, func(fc *ftpConn) error {
+			derr := fc.sc.Delete(tmp)
+			if derr == nil {
+				gone = true
+				return nil
+			}
+			if isFTPConnErr(derr) {
+				return derr
+			}
+			// 550 可能是「不存在」，也可能是「被占用删不掉」：查一下文件还在不在
+			if _, _, _, serr := t.ftpStat(fc, tmp); errors.Is(serr, ErrNotExist) {
+				gone = true
+			} else if serr != nil && isFTPConnErr(serr) {
+				return serr
+			}
+			return nil
+		})
+		if gone {
+			return
 		}
-		return nil
-	})
+		select {
+		case <-c.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait *= 2
+	}
 }
 
 // ftpReader 读取期间独占连接，Close 时结束数据连接并把连接放回池里。

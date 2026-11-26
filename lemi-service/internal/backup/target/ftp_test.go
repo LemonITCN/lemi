@@ -38,6 +38,7 @@ type ftpTestServer struct {
 	implicit    bool        // 隐式 TLS：控制连接一连上就是 TLS
 	noOverwrite bool        // RNTO 不覆盖已存在的文件（像 IIS）
 	noEPSV      bool        // 不支持 EPSV，只能 PASV
+	lockedDele  atomic.Int64 // 大于 0 时，接下来这么多次 DELE 报 550 且文件留着（模拟 Windows 上文件被占用）
 	stors       atomic.Int64
 	dataTLS     atomic.Int64 // 加密的数据连接数
 	wg          sync.WaitGroup
@@ -367,7 +368,15 @@ func (fs *ftpSession) handle(cmd, arg string) bool {
 			fs.reply("550 Delete operation failed")
 			return false
 		}
-		os.Remove(lp)
+		if s.lockedDele.Add(-1) >= 0 {
+			fs.reply("550 The process cannot access the file because it is being used by another process")
+			return false
+		}
+		// 删不掉（Windows 上文件仍被另一条连接打开）时像真实服务器一样报 550
+		if err := os.Remove(lp); err != nil {
+			fs.reply("550 Delete operation failed")
+			return false
+		}
 		fs.reply("250 Delete operation successful")
 	case "RNFR":
 		if _, err := os.Stat(s.local(fs.cwd, arg)); err != nil {
@@ -629,4 +638,19 @@ func TestFTPCanceledMidStream(t *testing.T) {
 		t.Fatalf("取消的上传不能留下文件：%v", err)
 	}
 	noTempFiles(t, s.root)
+}
+
+// 上传中断后，临时文件第一两次删不掉（Windows 上被原连接占用）：应当稍后重试直到删掉。
+func TestFTPRemoveLaterRetriesWhileLocked(t *testing.T) {
+	s := startFTPServer(t, &ftpTestServer{mlst: true})
+	tg := openFTPT(t, s.config(), Deps{}).(*ftpTarget)
+	if err := os.WriteFile(filepath.Join(s.root, tempPrefix+"locked.tmp"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.lockedDele.Store(2)
+	tg.removeLater(context.Background(), tg.full(tempPrefix+"locked.tmp"))
+	noTempFiles(t, s.root)
+	if n := s.lockedDele.Load(); n > -1 {
+		t.Fatalf("应当重试删除，剩余计数 %d", n)
+	}
 }

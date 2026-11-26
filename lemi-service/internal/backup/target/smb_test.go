@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hirochachacha/go-smb2"
+	"github.com/cloudsoda/go-smb2"
 )
 
 func TestSMBConfigErrors(t *testing.T) {
