@@ -54,6 +54,8 @@ type Manager struct {
 	BaseURL  string // 下载地址前缀，文件地址为 <BaseURL>/<tag>/<name>
 	Client   *http.Client
 	Manifest *Manifest
+	// Preinstalled 只读的预装目录（Docker 镜像里的 /opt/lemi/tools），布局与 Dir 相同：<目录>/mysql-<版本>/<平台>/bin/…
+	Preinstalled string
 	// Custom 返回管理员指定的客户端路径（可为 nil）。
 	Custom func() Custom
 	mu     sync.Mutex
@@ -91,9 +93,21 @@ func (m *Manager) InstallDir(version, platform string) string {
 	return filepath.Join(m.Dir, "mysql-"+version, platform)
 }
 
-// Installed 返回已安装的工具（没有返回 nil）。
+// Installed 返回已安装的工具（没有返回 nil）：先看数据目录里下载的（带完成标记），再看预装目录。
 func (m *Manager) Installed(v *Version, platform string) *Tool {
-	dir := m.InstallDir(v.Version, platform)
+	if t := toolAt(m.InstallDir(v.Version, platform), v, platform, true); t != nil {
+		return t
+	}
+	if m.Preinstalled != "" {
+		if t := toolAt(filepath.Join(m.Preinstalled, "mysql-"+v.Version, platform), v, platform, false); t != nil {
+			t.Source = "preinstalled"
+			return t
+		}
+	}
+	return nil
+}
+
+func toolAt(dir string, v *Version, platform string, needMarker bool) *Tool {
 	t := &Tool{Version: v.Version, Series: v.Series, Source: "bundled",
 		Mysqldump: filepath.Join(dir, "bin", exeName("mysqldump", platform)), Mysql: filepath.Join(dir, "bin", exeName("mysql", platform))}
 	for _, p := range []string{t.Mysqldump, t.Mysql} {
@@ -101,8 +115,10 @@ func (m *Manager) Installed(v *Version, platform string) *Tool {
 			return nil
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".lemi-ok")); err != nil {
-		return nil
+	if needMarker {
+		if _, err := os.Stat(filepath.Join(dir, ".lemi-ok")); err != nil {
+			return nil
+		}
 	}
 	return t
 }
@@ -411,6 +427,7 @@ type VersionStatus struct {
 	Series    string `json:"series"`
 	Available bool   `json:"available"` // 清单里有本平台的包
 	Installed bool   `json:"installed"`
+	Source    string `json:"source,omitempty"` // bundled（数据目录里下载的）| preinstalled（镜像预装）
 	File      string `json:"file,omitempty"`
 	SizeBytes int64  `json:"size_bytes,omitempty"` // 已安装的占用
 }
@@ -423,9 +440,9 @@ func (m *Manager) Status() (platform string, platformErr error, list []VersionSt
 		st := VersionStatus{Version: v.Version, Series: v.Series}
 		if f, ok := v.Files[platform]; ok && platformErr == nil {
 			st.Available, st.File = true, f.Name
-			if m.Installed(v, platform) != nil {
-				st.Installed = true
-				st.SizeBytes = dirSize(m.InstallDir(v.Version, platform))
+			if t := m.Installed(v, platform); t != nil {
+				st.Installed, st.Source = true, t.Source
+				st.SizeBytes = dirSize(filepath.Dir(filepath.Dir(t.Mysqldump)))
 			}
 		}
 		list = append(list, st)

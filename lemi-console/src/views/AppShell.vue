@@ -8,12 +8,14 @@ import Logo from '@/components/brand/Logo.vue'
 import { modules, railItems, rightPanel, type RailItem } from '@/modules/registry'
 import { useSession } from '@/stores/session'
 import { useUI } from '@/stores/ui'
+import { useTabs } from '@/stores/tabs'
 import { startRealtime, setWorkspace } from '@/lib/realtime'
 import { startResize } from '@/lib/resize'
 import { setLocale, i18n } from '@/i18n'
 
 const session = useSession()
 const ui = useUI()
+const tabsStore = useTabs()
 const route = useRoute()
 const router = useRouter()
 const t = i18n.global.t
@@ -68,6 +70,8 @@ const userItems = computed<MenuItem[]>(() => [
 ])
 
 watch(() => session.current?.id, (id) => setWorkspace(id || ''), { immediate: true })
+// 手机上从对象树或智能体打开标签后自动切到工作区
+watch(() => tabsStore.activeId, (id, old) => { if (ui.isMobile && id && id !== old && mobileView.value !== 'work') setMobile('work') })
 
 onMounted(() => {
   startRealtime()

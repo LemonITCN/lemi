@@ -38,7 +38,7 @@ type FormField struct {
 	Key         string   `json:"key"`
 	Label       string   `json:"label"`
 	LabelEN     string   `json:"label_en,omitempty"`
-	Type        string   `json:"type"` // text | password | number | select | bool | textarea | file | sqlite_file
+	Type        string   `json:"type"`            // text | password | number | select | bool | textarea | file | sqlite_file
 	Group       string   `json:"group,omitempty"` // basic | tls | advanced
 	Required    bool     `json:"required,omitempty"`
 	Secret      bool     `json:"secret,omitempty"` // 加密保存、只写不读

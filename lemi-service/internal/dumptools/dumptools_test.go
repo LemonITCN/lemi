@@ -291,6 +291,21 @@ func TestInstall(t *testing.T) {
 	if _, _, err := m2.Resolve(context.Background(), "MySQL", "8.4.3", false, nil); err == nil {
 		t.Fatal("没装时应报错")
 	}
+	// 预装目录（Docker 镜像）：没有完成标记也认
+	pre := t.TempDir()
+	os.MkdirAll(filepath.Join(pre, "mysql-8.4.13.1"), 0o700)
+	if err := os.Rename(m.InstallDir("8.4.13.1", platform), filepath.Join(pre, "mysql-8.4.13.1", platform)); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(filepath.Join(pre, "mysql-8.4.13.1", platform, ".lemi-ok"))
+	if m.Installed(&m.Manifest.Versions[0], platform) != nil {
+		t.Fatal("挪走后不应显示已安装")
+	}
+	m.Preinstalled = pre
+	if tl := m.Installed(&m.Manifest.Versions[0], platform); tl == nil || tl.Source != "preinstalled" {
+		t.Fatalf("预装目录：%+v", tl)
+	}
+	m.Preinstalled = ""
 	if err := m.Remove("8.4.13.1"); err != nil {
 		t.Fatal(err)
 	}

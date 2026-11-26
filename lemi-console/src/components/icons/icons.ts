@@ -173,6 +173,18 @@ export const icons: Record<string, string> = {
   'null': '<circle cx="12" cy="12" r="7"/><path d="M7 17L17 7"/>',
   'robot': '<rect x="5" y="8" width="14" height="10.5" rx="2.5"/><path d="M12 8V4.5M9.5 13h.01M14.5 13h.01M3 12.5v2.5M21 12.5v2.5"/><circle cx="12" cy="4" r="1" fill="currentColor" stroke="none"/>',
   'task': '<circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.5M9.5 3.5h5"/>',
+  // 表格、控制台、ER 图
+  'zoom-in': '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4M8.5 11h5M11 8.5v5"/>',
+  'zoom-out': '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4M8.5 11h5"/>',
+  'fit': '<path d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"/>',
+  'chevrons-right': '<path d="M12 6.5l5.5 5.5-5.5 5.5M6 6.5l5.5 5.5L6 17.5"/>',
+  'binary': '<rect x="4.5" y="4.5" width="5" height="7" rx="2"/><path d="M15 4.5v7M13.5 6l1.5-1.5M7 13.5v6M5.5 15L7 13.5"/><rect x="13" y="13.5" width="5" height="6" rx="2"/>',
+  'wrap': '<path d="M4.5 6.5h15M4.5 12h12a3 3 0 0 1 0 6H12M4.5 17.5h4"/><path d="M14 16l-2 2 2 2"/>',
+  'filter-x': '<path d="M4.5 5.5h15l-6 7v5l-3 1.5v-6.5z"/><path d="M16.5 15.5l4 4M20.5 15.5l-4 4"/>',
+  'sigma': '<path d="M17.5 5.5h-11l6 6.5-6 6.5h11"/>',
+  'panel-bottom': '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 14.5h17"/>',
+  'tx': '<path d="M8 4.5H6.5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1H8M16 4.5h1.5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H16"/><path d="M9.5 12h5M12 9.5v5"/>',
+  'paste': '<rect x="6.5" y="5" width="11" height="15" rx="1.5"/><path d="M9.5 5V3.8c0-.4.3-.8.8-.8h3.4c.5 0 .8.4.8.8V5M9.5 11h5M9.5 14.5h5"/>',
 }
 
 export type IconName = keyof typeof icons

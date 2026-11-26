@@ -31,11 +31,11 @@ type TableRef struct {
 
 // Info 是分类结果。
 type Info struct {
-	Kind      Kind       `json:"kind"`
-	Keyword   string     `json:"keyword"` // 主关键字（大写）
-	ReturnsRows bool     `json:"returns_rows"`
-	Tables    []TableRef `json:"tables,omitempty"`
-	Dangerous string     `json:"dangerous,omitempty"` // 危险原因（DROP、TRUNCATE、无 WHERE 的 UPDATE/DELETE）
+	Kind        Kind       `json:"kind"`
+	Keyword     string     `json:"keyword"` // 主关键字（大写）
+	ReturnsRows bool       `json:"returns_rows"`
+	Tables      []TableRef `json:"tables,omitempty"`
+	Dangerous   string     `json:"dangerous,omitempty"` // 危险原因（DROP、TRUNCATE、无 WHERE 的 UPDATE/DELETE）
 	// TablesComplete 表引用是否解析完整（含无法解析的结构时为 false，白名单检查应拒绝）
 	TablesComplete bool `json:"tables_complete"`
 }
@@ -65,10 +65,10 @@ func (i Info) IsWrite() bool {
 }
 
 type token struct {
-	t    byte   // w=单词 q=引号标识符 s=字符串 n=数字 p=标点
-	v    string // 单词为大写原文，标识符为去引号后的名字
-	raw  string
-	pos  int
+	t   byte   // w=单词 q=引号标识符 s=字符串 n=数字 p=标点
+	v   string // 单词为大写原文，标识符为去引号后的名字
+	raw string
+	pos int
 }
 
 // tokenize 词法切分：跳过注释（条件注释 /*! */ 的内容当作正文），识别字符串与引号标识符。
@@ -401,9 +401,29 @@ func tableRefs(ts []token) ([]TableRef, bool) {
 		}
 		return "", a, i + 1, true
 	}
+	// 括号栈：记录每层括号前面的函数名，EXTRACT(YEAR FROM x)、TRIM(… FROM x)、SUBSTRING(x FROM 2) 里的 FROM 不是表引用
+	var parens []string
 	for i := 0; i < len(ts); i++ {
 		t := ts[i]
+		if t.t == 'p' {
+			switch t.v {
+			case "(":
+				fn := ""
+				if i > 0 && ts[i-1].t == 'w' {
+					fn = ts[i-1].v
+				}
+				parens = append(parens, fn)
+			case ")":
+				if len(parens) > 0 {
+					parens = parens[:len(parens)-1]
+				}
+			}
+			continue
+		}
 		if t.t != 'w' {
+			continue
+		}
+		if t.v == "FROM" && len(parens) > 0 && fromFuncs[parens[len(parens)-1]] {
 			continue
 		}
 		switch t.v {
@@ -455,6 +475,71 @@ func tableRefs(ts []token) ([]TableRef, bool) {
 	return refs, complete
 }
 
+// fromFuncs 参数里可以出现 FROM 关键字的函数。
+var fromFuncs = map[string]bool{"EXTRACT": true, "TRIM": true, "SUBSTRING": true, "SUBSTR": true, "POSITION": true, "OVERLAY": true}
+
+// CTENames 返回语句里 WITH 定义的公共表表达式名（表引用里出现它们时不是真实的表）。
+func CTENames(sql, dialect string) []string {
+	ts := tokenize(sql, dialect)
+	skip := func(j int) int { // ts[j] 是 "("，返回匹配的 ")" 之后的位置
+		depth := 0
+		for ; j < len(ts); j++ {
+			if ts[j].t == 'p' && ts[j].v == "(" {
+				depth++
+			} else if ts[j].t == 'p' && ts[j].v == ")" {
+				depth--
+				if depth == 0 {
+					return j + 1
+				}
+			}
+		}
+		return j
+	}
+	var out []string
+	for i := 0; i < len(ts); i++ {
+		if !isWord(ts[i], "WITH") {
+			continue
+		}
+		j := i + 1
+		if j < len(ts) && isWord(ts[j], "RECURSIVE") {
+			j++
+		}
+		for j < len(ts) {
+			name := ""
+			if ts[j].t == 'q' {
+				name = ts[j].v
+			} else if ts[j].t == 'w' && !reserved[ts[j].v] {
+				name = ts[j].raw
+			}
+			if name == "" {
+				break
+			}
+			j++
+			if j < len(ts) && ts[j].t == 'p' && ts[j].v == "(" {
+				j = skip(j)
+			}
+			if j >= len(ts) || !isWord(ts[j], "AS") {
+				break
+			}
+			j++
+			for j < len(ts) && isWord(ts[j], "NOT", "MATERIALIZED") {
+				j++
+			}
+			if j >= len(ts) || ts[j].t != 'p' || ts[j].v != "(" {
+				break
+			}
+			j = skip(j)
+			out = append(out, name)
+			if j < len(ts) && ts[j].t == 'p' && ts[j].v == "," {
+				j++
+				continue
+			}
+			break
+		}
+	}
+	return out
+}
+
 var reserved = func() map[string]bool {
 	m := map[string]bool{}
 	for _, w := range strings.Fields(`SELECT FROM WHERE GROUP ORDER BY HAVING LIMIT OFFSET JOIN INNER LEFT RIGHT FULL OUTER CROSS NATURAL ON USING
@@ -468,9 +553,9 @@ var reserved = func() map[string]bool {
 
 // SelectCol 是简单查询里的一列。
 type SelectCol struct {
-	Star   bool   // *
-	Name   string // 原始列名
-	Alias  string // 结果列名
+	Star  bool   // *
+	Name  string // 原始列名
+	Alias string // 结果列名
 }
 
 // SimpleSelect 是「单表、无聚合」的查询，结果可以回写（§9.4）。

@@ -77,6 +77,10 @@ func EncodeCell(v any, kind string, limit int) any {
 		}
 		return "0"
 	case time.Time:
+		// SQLite 驱动会把声明为 DATE/DATETIME 的文本解析成时间：日期列按原样只显示日期，避免写回时改变数据格式
+		if kind == "date" && x.Hour() == 0 && x.Minute() == 0 && x.Second() == 0 && x.Nanosecond() == 0 {
+			return x.Format("2006-01-02")
+		}
 		if x.Nanosecond() == 0 {
 			return x.Format("2006-01-02 15:04:05")
 		}

@@ -544,7 +544,9 @@ func (c *Conn) Variables(ctx context.Context) (map[string]string, error) {
 }
 
 // Processes SQLite 没有进程列表。
-func (c *Conn) Processes(ctx context.Context) ([]map[string]any, error) { return []map[string]any{}, nil }
+func (c *Conn) Processes(ctx context.Context) ([]map[string]any, error) {
+	return []map[string]any{}, nil
+}
 
 // KillProcess 不支持。
 func (c *Conn) KillProcess(ctx context.Context, id string, queryOnly bool) error {

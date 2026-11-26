@@ -982,4 +982,3 @@ func (s *Service) hSavedDelete(srv *web.Server, w http.ResponseWriter, r *http.R
 	}
 	return web.OK(w, map[string]any{"ok": true})
 }
-

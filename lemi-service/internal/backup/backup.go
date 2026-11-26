@@ -49,6 +49,7 @@ type Deps struct {
 	Hub       *realtime.Hub
 	Log       *slog.Logger
 	Notify    Notifier
+	Health    HealthStatus // 可为空（智能体的 health_status 工具用）
 	Tools     *dumptools.Manager
 	Downloads *downloads.Store
 	// DataDir 数据目录：本地目录目标的默认根 backups/、暂存与临时文件 tmp/backup/

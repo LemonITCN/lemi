@@ -83,6 +83,8 @@ lemi/
 
 「首次启动写入」类变量只在对应项为空时写入数据库，之后以界面上的设置为准，避免重启覆盖用户的修改。
 
+口令类变量（LEMI_MASTER_KEY、LEMI_ADMIN_USERNAME、LEMI_ADMIN_PASSWORD、LEMI_ADMIN_EMAIL、LEMI_OPENCODE_API_KEY、LEMI_SMTP_USERNAME、LEMI_SMTP_PASSWORD）都可以改用 `<变量>_FILE` 指向一个文件（Docker secrets 的惯例，去掉末尾换行），两者同时设置时报错。由命令层（cmd/lemi/envfile.go）在读取配置之前处理。
+
 ### 3.3 命令行
 
 ```
@@ -93,6 +95,7 @@ lemi admin unlock <用户名|IP>                   解除登录锁定
 lemi service install|uninstall|start|stop|status [--data DIR] [--listen ADDR]
                                                装成 systemd / launchd / Windows 服务
 lemi update [--check]                          检查并升级到最新正式版（校验发布签名）
+lemi healthcheck [--timeout 5s]                请求本机 /healthz（Docker HEALTHCHECK 用；按 LEMI_LISTEN 选地址，TLS 时只连本机并跳过证书校验）
 lemi backup-file decrypt|to-sql <备份文件> [-o 输出]   离线解密 / 解压备份为 .sql（需要备份密码）
 lemi version
 ```
@@ -461,6 +464,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 - 版本：8.0（服务于 5.7 与 8.0 服务器）、8.4 LTS、9.x 最新。服务器版本 → 客户端版本映射写在清单里。
 - 清单 `lemi-service/internal/dumptools/manifest.json`（随代码发布）：每个 版本 × 平台 的文件名与 SHA-256。Lemi 下载 `<LEMI_TOOLS_BASE_URL>/<文件名>`，校验 SHA-256 后解压到 `<数据目录>/tools/mysql-<版本>/`。校验失败删除并报错。
 - 也可以在设置里指定服务器上已安装的 mysqldump 路径（Lemi 读取其版本号）。Docker 镜像内预装。
+- Docker 预装位置：`/data/tools` 会被数据卷覆盖，所以镜像构建时（docker/fetch-mysql-tools.sh，按本清单下载并校验 SHA-256）装在 `/opt/lemi/tools/mysql-<版本>/linux-<架构>/`（归档只有一个顶层目录时去掉这一层），镜像设置环境变量 `LEMI_TOOLS_PREINSTALLED=/opt/lemi/tools`。dumptools 查找某个版本时，先查 `$LEMI_TOOLS_PREINSTALLED/mysql-<版本>/<系统>-<架构>/`（只读，不下载、不删除），没有再查 `<数据目录>/tools/mysql-<版本>/`，都没有才下载。
 
 ## 14. 健康检查
 
@@ -540,6 +544,27 @@ workspace_* 只在用户的浏览器在线时提供；定时任务与 MCP 没有
 
 浏览器经 WebSocket 接收服务端发来的 `client_call`（工具名、参数、调用 ID），在主工作区执行后回传结果。打开的标签在 AI 面板里有「来自 AI」标记；聊天里显示一张卡片（连接、表、条件、行数），点击切换到该标签。
 
+#### 16.5.1 浏览器端工具约定
+
+- 消息：服务端发 `{"t":"client_call","d":{"id","tool","args"}}`，浏览器回 `{"t":"client_result","d":{"id","result"}}`；工具不存在或抛异常时回 `{"id","error"}`。工具内部的业务错误放在 `result.error`（字符串），不抛异常。字段与服务端 §24.6 一致，下表是浏览器实际返回的完整字段（是 §24.6 的超集）。
+- 实现：`lemi-console/src/modules/workspace-tools/`（按需加载）。标签组件把可读状态与动作登记在 `src/stores/tabstate.ts`（`registerTabState(tabId, getter, actions)`）：表格标签动作 `update({where?, order_by?, scroll_to_row?})`（等加载完成）与 `loaded()`；控制台标签动作 `run(sql)`。工具只读登记的状态，不直接碰组件内部。
+- 权限：档位与白名单（§16.4）由服务端在发出 `client_call` 之前判定；`args.visible_connections` 是本次对智能体可见的连接 ID，浏览器拒绝打开、修改、读取其他连接的标签。浏览器以用户本人的会话执行，数据库层权限照常生效。
+- 写语句（非 SELECT / WITH / SHOW / DESCRIBE / EXPLAIN / VALUES / TABLE / USE / 只读 PRAGMA）：服务端审批过（或档位允许自动执行）时参数带 `approved: true`；没带的，浏览器弹确认框（生产连接醒目提示），用户拒绝则返回 `{error}`。
+- 行号：`selection.rows`、`goto_row` 用表格里显示的序号（从 1 开始，含翻页偏移）。
+- 样本：纯文本（NULL 写作 `NULL`，二进制写作 `0x` 十六进制，单元格超过 500 字符截断并带 `…`）。`sample` 前 20 行；`workspace_read_view` 的 `max_rows` 默认 20、最多 100。
+- 打开或修改过的标签标记 `fromAI`（标签栏显示 AI 标记）。
+
+| 工具 | 参数 | 返回 |
+|---|---|---|
+| `workspace_open_table` | `connection_id`、`db`（SQLite 可省略，默认 `main`）、`table`、`where?`、`order_by?`、`columns?`（只看这些列）、`visible_connections?` | `{tab_id, connection_id, db, table, where, order_by, offset, rows_loaded, has_more, columns, sample}`；失败 `{error}` |
+| `workspace_run_sql` | `connection_id`、`db?`、`sql`（可多条）、`title?`（标签标题）、`approved?`、`visible_connections?` | `{tab_id, connection_id, db, in_tx, results:[{kind: rows\|exec\|error, statement, columns, rows_loaded, affected, error, duration_ms, sample}]}` |
+| `workspace_update_view` | `tab_id?`（缺省 = 当前标签，必须是表格）、`where?`、`order_by?`、`columns?`、`goto_row?`、`visible_connections?` | 同 `workspace_open_table` |
+| `workspace_read_view` | `tab_id?`（缺省 = 当前标签）、`max_rows?`、`visible_connections?` | `{tab_id, kind, title, connection_id, db, table, where, order_by, sql, selection:{rows:[行号], columns:[列名], cells:[[行号, 列名, 值]]}, visible_rows_sample:{columns, rows}, total_loaded}`；表格另有 `offset`、`has_more`、`pending_changes`，控制台另有 `in_tx`、`results`；其他标签（DDL、设计器、ER 图、监控、账号）只给出类型、连接、库与对象名 |
+
+- `workspace_open_table`：同一张表已有标签时激活它并只改条件，不开新标签；条件不变则只等当前加载完成。
+- `workspace_run_sql`：每次新开一个控制台标签（会话独立），填入 SQL 后执行全部语句，结果显示在该标签的结果区。
+- 改条件时如果表格有未提交的修改，不覆盖，返回 `{error}` 让智能体请用户先处理。
+
 ### 16.6 图表
 
 - 前端 ECharts 6 + echarts-gl（3D 柱、3D 散点、曲面、3D 地球除外）。类型：柱、条形、折线、面积、饼/环、散点、气泡、热力、漏斗、雷达、桑基、树图、旭日、箱线、K 线、仪表盘、3D 柱、3D 散点、3D 曲面。
@@ -589,6 +614,10 @@ workspace_* 只在用户的浏览器在线时提供；定时任务与 MCP 没有
   - Docker 镜像 `ghcr.io/lemonitcn/lemi:<版本>` 与 `latest`（linux/amd64、linux/arm64，预装对应版本 mysqldump/mysql），仓库首页提供 docker-compose.yml。
 - 纯 Go、关闭 CGO（SQLite 用 modernc），单文件内嵌前端。
 - 在线升级：每天检查 GitHub 最新正式版，实例管理员一键升级（下载对应平台包 → 校验签名与 SHA-256 → 替换可执行文件 → 由服务管理器或自身重启）；Docker 部署只提示，不自升级。
+  - 签名：`SHA256SUMS.sig` = Ed25519(私钥, SHA256SUMS 原始字节) 的标准 base64。清单里必须有「最新版本号」对应的包名（防止拿旧版本的真清单冒充新版本），不接受降级与同版本重装；替换前运行新程序的 `version` 确认版本号。签名工具 `go run ./internal/selfupdate/releasesign`（keygen / sign / verify / pubkey），sign 时私钥必须与内置公钥匹配。
+  - 替换：同目录临时文件原子改名；Windows 运行中的 exe 先改名为 `.old`，新进程启动后清理。
+  - 重启：Unix（前台或 systemd / launchd）给自己发 SIGTERM 正常退出后 execve 原地换成新程序（进程号不变）；Windows 前台正常退出后以相同参数启动新进程；Windows 服务拉起独立的 `lemi service restart` 进程经服务控制管理器停止再启动。
+  - 接口：`GET /api/v1/admin/update`（当前 / 最新版本、发布说明、能否自动升级及原因、升级任务状态，`?refresh=1` 立即检查，最短间隔 1 分钟）、`POST /api/v1/admin/update`（实例管理员、需 re-auth、记审计 `system.update.start` / `system.update`，后台执行，返回 202，结果经 WebSocket `notice` 推送）；bootstrap 给实例管理员附带 `update: {version, url, can_auto_update}`。
 
 ## 21. 测试
 
@@ -691,7 +720,7 @@ internal/
 | DELETE | `/admin/dumptools/{version}` | 删除已安装的版本 |
 | PUT | `/admin/dumptools/custom` | `{mysqldump_path, mysql_path}`：指定服务器上已安装的客户端（读取 `--version`；两项都为空表示取消）。会被执行，所以要求 10 分钟内验证过身份（re-auth） |
 
-工具包布局（`scripts/extract-mysql-tools.sh` 产出）：没有顶层目录，`bin/mysqldump`、`bin/mysql`（Windows 为 .exe，DLL 也在 bin/）、`lib/<依赖库>`、`LICENSE`、`README-lemi.txt`。服务器版本 → 客户端：MySQL 5.x 与 8.0 用 8.0 客户端（5.7 加 `--column-statistics=0`），8.1–8.4 用 8.4，9.x 及以后用清单里同主版本最新的；清单缺对应系列（或该系列缺本平台的包）时用不低于它的最老可用版本并给出警告。MariaDB 用 8.0 客户端加 `--column-statistics=0`，并建议改用自研导出器。mysqldump 参数：`--single-transaction --quick --routines --triggers --events --hex-blob --default-character-set=utf8mb4 --max-allowed-packet=1G --no-tablespaces --set-gtid-purged=OFF --databases <库…>`。
+查找顺序：系统设置里指定的路径 → `<数据目录>/tools` 里下载的 → 环境变量 `LEMI_TOOLS_PREINSTALLED` 指向的只读预装目录（Docker 镜像为 `/opt/lemi/tools`，布局相同）→ 自动下载。工具包布局（`scripts/extract-mysql-tools.sh` 产出）：没有顶层目录，`bin/mysqldump`、`bin/mysql`（Windows 为 .exe，DLL 也在 bin/）、`lib/<依赖库>`、`LICENSE`、`README-lemi.txt`。服务器版本 → 客户端：MySQL 5.x 与 8.0 用 8.0 客户端（5.7 加 `--column-statistics=0`），8.1–8.4 用 8.4，9.x 及以后用清单里同主版本最新的；清单缺对应系列（或该系列缺本平台的包）时用不低于它的最老可用版本并给出警告。MariaDB 用 8.0 客户端加 `--column-statistics=0`，并建议改用自研导出器。mysqldump 参数：`--single-transaction --quick --routines --triggers --events --hex-blob --default-character-set=utf8mb4 --max-allowed-packet=1G --no-tablespaces --set-gtid-purged=OFF --databases <库…>`。
 
 ### 23.3 健康检查（`/workspaces/{ws}/health`）
 
@@ -726,6 +755,8 @@ Webhook 签名：`X-Lemi-Timestamp`（Unix 秒）、`X-Lemi-Signature: sha256=<h
 
 安全事件（`account_locked`、`new_device_login`、`password_changed`、`totp_disabled`）用系统邮件服务器发给用户本人，内容含时间、IP、UA；用户没有邮箱或没有配置系统邮件服务器时只记日志。
 
+智能体与 MCP 的 `list_backups`、`backup_status`、`health_status` 工具由备份服务实现（`tools.BackupInfo`），只返回调用方可见连接的数据，不含任何密钥或备份密码。
+
 ### 23.5 实时消息 `backup_progress`
 
 每秒推给空间成员一次，结束时再推一次带 `done:true` 与最终 `status`、`error` 的消息：`{kind(backup|restore|verify), id(运行记录 / 还原记录 / 校验任务 ID), workspace_id, connection_id, plan_id, phase(queued|preparing_tool|downloading_tool|running|uploading|comparing), bytes(已处理的原始数据字节), written(写到目标或从目标读的字节), total, rows, database, table, tables_done, tables_total, statements, errors, speed(字节/秒), elapsed_ms}`。
@@ -733,3 +764,258 @@ Webhook 签名：`X-Lemi-Timestamp`（Unix 秒）、`X-Lemi-Signature: sha256=<h
 ### 23.6 离线工具
 
 `lemi backup-file decrypt <文件> [-o 输出] [--passphrase-file 文件]` 解密 .lemienc 得到压缩后的原文件；`lemi backup-file to-sql <文件> [...]` 解密（需要时）并按文件头识别 zstd/gzip 解压，得到 .sql（SQLite 文件快照得到 .db）。不需要 Lemi 数据目录；没给口令文件时在终端无回显输入；`-o -` 输出到标准输出；默认写在原文件旁边，不覆盖已有文件，出错时不留下不完整的输出文件。
+
+## 24. 智能体 / MCP / 报告接口
+
+本节是 §16、§17 的落地细节：接口、事件、浏览器端工具的参数与返回、权限的具体规则。前端照这里实现。所有 `/api/v1` 接口沿用 §18 的约定（JSON、错误格式、CSRF 头）；时间为 Unix 毫秒，ID 为 26 位小写 ULID。
+
+### 24.1 服务端包与数据
+
+| 包 | 作用 |
+|---|---|
+| `llm` | 消息/工具/流事件模型；Chat Completions、Anthropic Messages、OpenAI Responses 三种协议；OpenCode Go 与自定义供应商；错误分类（`Classify` → `ErrorKind`）与 `retry-after-ms` / `retry-after` / `x-should-retry` 解析；流没有正常结束标记就断开时报 `stream_incomplete` |
+| `results` | 大结果集：`<数据目录>/results/<id>.json` + 表 `ai_results`，7 天清理；查询结果（最多 10 万行、64 MB）与被截断的长工具输出（文本） |
+| `charts` | 图表（ECharts option 模板 + dataset 快照）与图（Mermaid）对象，option 清洗 |
+| `reports` | 报告、引用块快照、公开链接、Markdown 导出 |
+| `tools` | 工具注册表（内置智能体、子智能体、定时任务、MCP 共用）、AI 档位权限计算、参数修复、输出截断 |
+| `agent` | agent loop、压缩、子智能体、会话存储、事件流、模型供应商配置 |
+| `oauth` | MCP 的 OAuth 2.1 授权服务器与个人访问令牌 |
+| `mcpserver` | `/mcp` 端点 |
+| `tasks` | 定时智能体任务 |
+| `aitest` | 测试夹具（只在测试里引用） |
+
+迁移：`300_ai.sql`（供应商、会话、消息、运行、结果、图表、报告）、`310_mcp_tasks.sql`（OAuth 客户端、授权码、令牌、授权、定时任务与运行记录）。
+
+装配（`app/mod_ai.go`，Order 300）：备份模块若 `a.Set("backup", x)` 且 `x` 实现 `tools.BackupInfo`，就注册 `list_backups` / `backup_status` / `health_status`；通知模块若 `a.Set("notify", x)` 且实现 `tasks.TaskNotifier`，定时任务结果经它发出，否则只记日志。
+
+```go
+// tools.BackupInfo：connIDs 是本次调用对智能体可见的连接（已按权限过滤），返回值会序列化成 JSON 给模型
+AIListBackups(ctx, u *accounts.User, workspaceID string, connIDs []string, limit int) (any, error)
+AIBackupStatus(ctx, u *accounts.User, workspaceID string, connIDs []string) (any, error)
+AIHealthStatus(ctx, u *accounts.User, workspaceID string, connIDs []string) (any, error)
+
+// tasks.TaskNotifier
+NotifyTask(ctx, n tasks.TaskNotification) error
+// TaskNotification：workspace_id, channel_ids, task_id, task_name, run_id, status(done|error|stopped), level(info|error),
+// title, message, summary, error, report_ids, link, started_at, finished_at
+```
+
+### 24.2 权限规则（§16.4 的实现）
+
+- 实际档位 `EffectiveAI = min(用户对连接的权限, 连接 AI 档位, 授权档位, 会话模式)`：
+  - 用户权限 none → 不可见；read（查看者、个人收紧为只读）→ 最多只读；连接设为只读 → 最多只读；
+  - 连接档位为「完全放开」但实例管理员没打开 `AllowAIFullAccess` → 按「增删改自动」；
+  - 授权（MCP 授权、定时任务的连接设置）里没列出的连接 → 不可见；
+  - 计划模式、子智能体 → 最多只读；连接不属于当前工作空间 → 不可见。
+- 不可见的连接在任何工具里都不出现，引用它与引用不存在的连接报同样的错。
+- 库表白名单（`库.表`，`*`/`?` 通配，SQLite 的库是 `main`）：结构工具只列出白名单内的库与表；查询与写入用语句分类器解析表引用（排除 WITH 定义的公共表表达式名、`EXTRACT(… FROM 列)` 一类函数参数），任何一张表不在白名单 → 拒绝；表引用解析不完整（`TablesComplete=false`）→ 拒绝；有白名单时 `SHOW` / `PRAGMA` 一律拒绝（用结构工具代替），直接查 `information_schema` 拒绝；多语句里的 `USE` 切换到的库也必须在白名单里。
+- 只读查询（`run_query`、`explain_query`、`create_chart` 的 SQL）一律经 `conns.OpenConsole(..., forceReadOnly=true, timeout=AgentTimeoutSec)`，数据库层强制只读；只接受一条 `Read` 类语句。
+- 写入（`execute_sql`、`workspace_run_sql` 里的写语句）在 `conns.Exec` 的 `Check` 钩子里逐条判断：
+  - 档位低于「读写·逐条确认」→ 拒绝；计划模式 → 拒绝；
+  - 「逐条确认」→ 每条写语句都要审批；
+  - 「增删改自动」→ 没有危险标记的 INSERT/UPDATE/DELETE 自动；DDL、管理语句、CALL、没有 WHERE 的 UPDATE/DELETE 要审批；
+  - 「完全放开」→ 全自动；
+  - 事务控制、`USE`、只读语句不需要审批。
+- 需要审批时按调用方处理：内置智能体弹审批卡片（§24.4 `approval` 事件）；MCP 由外部智能体自己的确认机制把关（自动放行），但档位落到「逐条确认」时拒绝写入（MCP 授权本身不能选「逐条确认」，§24.7）；定时任务一律拒绝。
+- 审批卡片字段：`tool, key, connection_id, connection_name, driver, production(env=prod), db, sql, class(dml|ddl|admin|call|other|session), keyword, tables, dangerous, reason, estimate（MySQL 增删改用 EXPLAIN 估算扫描行数）, related_ddl（{库.表: 建表语句}）, ai_level, explanation（智能体写的 reason）`。
+- 审计：每条执行的 SQL 由 `conns.Exec` 记审计，来源 `agent` / `mcp` / `task`；图表创建、报告创建修改、授权与令牌变化另有审计。
+
+### 24.3 智能体会话接口
+
+| 方法与路径 | 说明 |
+|---|---|
+| `GET /workspaces/{ws}/ai/models` | 空间可用模型 `{configured, models:[{ref, id, name, provider_id, provider_name, context, max_output, vision, efforts, default_effort, api, featured}], default, errors}`（查看者及以上） |
+| `GET/PUT /workspaces/{ws}/ai/settings` | 空间 AI 设置 `{models:[ref], default_model, instructions}`；`models` 为空表示全部可用；PUT 要空间管理员 |
+| `GET/PUT /me/ai` | 个人自定义指令 `{instructions}`（≤ 8000 字） |
+| `GET /workspaces/{ws}/agent/conversations?kind=chat\|task&archived=1&limit=` | 我的会话列表（成员及以上） |
+| `POST /workspaces/{ws}/agent/conversations` | 新建 `{settings:{model, effort, mode}}` → `{conversation}` |
+| `GET /agent/conversations/{id}` | `{conversation, messages, todos, summary, summary_upto, context, active_run?:{id, state, resume_from, pending}}`；消息里隐藏片段（系统更新、续写提示）与思考签名已去掉 |
+| `PATCH /agent/conversations/{id}` | `{title?, archived?, settings?}`；运行中修改模式会在下一个步骤边界生效并插入 `<system-update>` |
+| `DELETE /agent/conversations/{id}` | 删除（先停止运行，子智能体会话一起删） |
+| `POST /agent/conversations/{id}/messages` | 发消息 `SendInput` → `{run_id, message?, steered?, queued?}` |
+| `GET /agent/runs/{id}` | 运行状态 `{id, conversation_id, state, last_seq, resume_from, pending}`；已结束很久的从库里读 `{state, error, steps, started_at, finished_at}` |
+| `GET /agent/runs/{id}/events?after=<seq>` | SSE 续传（也认 `Last-Event-ID`），每条 `id: <seq>`、`data: <Event JSON>`，15 秒心跳注释；运行结束且发完后关闭 |
+| `POST /agent/runs/{id}/stop` | 停止：先取消工具（数据库查询随之取消），5 秒后强制中断，未完成的工具记「已中断」 |
+| `POST /agent/runs/{id}/respond` | 回应交互 `{id, reply:"once"\|"always"\|"reject", message?, answers?}` |
+| `GET /agent/results/{id}?offset=&limit=` | 结果集分页（自己的结果；`limit` ≤ 5000）`{result, columns, rows, total}`；文本结果 `{result, text, total}` |
+| `GET /charts/{id}` | 图表/图 `{chart:{id, kind:"echarts"\|"mermaid", title, option?, gl?, rows?, truncated?, refreshed_at?, source?, code?, diagram?, refreshable}}`（空间查看者） |
+| `POST /charts/{id}/refresh` | 重新执行查询刷新数据快照（成员；按当前用户自己的连接权限在只读会话里执行） |
+
+`SendInput`：
+
+```json
+{"text": "…", "delivery": "steer|queue", "model": "<供应商ID>/<模型ID>", "effort": "low", "mode": "normal|plan",
+ "context": {"open_tabs": [{"id":"t1","kind":"table","connection_id":"…","db":"app","table":"orders","title":"orders"}], "active_tab": "t1"}}
+```
+
+- 会话空闲：写入用户消息并开始一轮运行。正在运行：`delivery=steer`（默认）在下一个步骤边界插入；`queue` 排队到本轮结束后自动开始下一轮（旧运行推 `next_run` 事件）。
+- 首条消息时固定系统提示（基础提示 + 环境块 + 空间约定 + 个人指令）；之后日期、模式、连接列表、打开的标签变化以隐藏的 `<system-update>` 用户消息插入，系统提示不变。
+- 首条消息先用前 30 个字作临时标题，后台让模型生成 3–8 字标题（`title` 事件）。
+
+消息片段（`messages[].parts[]`）：`{type: text|reasoning|tool_call|tool_result, text, call_id, name, args, is_error, title（工具中文名）, data（工具给界面的结构化数据，见各工具）, status: done|error|denied|interrupted|skipped|lost, duration}`。助手消息的 `meta`：`{model, usage, stop, step, partial?}`；出错的运行会追加一条 `parts[0].status=error, data.error` 的助手消息。
+
+### 24.4 智能体事件
+
+WebSocket 消息 `{"t":"run_event","d":{"run_id","conversation_id","seq","type","data","at"}}`，SSE 里是 `{"seq","type","data","at"}`。同一运行的 `seq` 从 1 递增；断线后用 `GET /agent/runs/{id}` 的 `resume_from`（当前这一步开头之前的序号）续传，`pending` 是还在等待回应的交互。
+
+| type | data |
+|---|---|
+| `run_start` | `{run_id, conversation_id}` |
+| `user_message` | 消息对象（含插话） |
+| `steer_queued` / `queued` | `{text}`：插话已收下 / 已排队 |
+| `step_start` | `{step, last}`（`last` 为步数上限的最后一步） |
+| `assistant_start` / `assistant_done` | `{id, partial?}` 一次模型响应的开始与结束 |
+| `text` / `reasoning` | `{id, text}` 增量 |
+| `tool_input_start` / `tool_input_delta` | `{call_id, name, title}` / `{call_id, text}` 工具参数流式生成 |
+| `tool_call` | `{call_id, name, title, args}` 参数完整（只读工具此时已开始执行） |
+| `tool_running` | `{call_id, name}` |
+| `tool_result` | `{call_id, name, status, text（≤4000 字）, data, duration, truncated_result_id}` |
+| `message_saved` | `{id, seq, role, synthetic?}` |
+| `step_reset` | `{reason}`：这一步没有输出就失败，丢弃已显示的半截内容（随后重试） |
+| `retry` | `{attempt, wait_ms, kind, label, error}` |
+| `usage` | `{context, limit, window, total:{input, output, cache_read, cache_write, reasoning, requests}}` |
+| `approval` | 审批卡片（§24.2 字段）+ `{id, kind:"approval"}` |
+| `question` | `{id, kind:"question", questions:[{question, header, options:[{label, description}], multiple}]}`；没有 options 是填空题 |
+| `doom_loop` | `{id, kind:"doom_loop", call_id, tool, args, message}` 同一工具同样参数连续 3 次 |
+| `interaction_done` | `{id, reply}` |
+| `todos` | `{todos:[{content, status, priority}]}` |
+| `compaction_start` / `compaction_done` | `{reason: auto\|overflow}` / `{ok, summary?, upto?}` |
+| `system_update` | `{text}` |
+| `subagent_start` / `subagent_done` | `{task_id, description, type, resumed}` / `{task_id, ok, error?}` |
+| `subagent_event` | `{task_id, type: tool_call\|tool_result\|retry\|notice, data}` |
+| `notice` | `{level: info\|warn, text}` |
+| `title` | `{title}` |
+| `next_run` | `{run_id}` 排队的消息开始了新一轮 |
+| `run_done` | `{status: done\|error\|stopped, error}` |
+
+交互回应：`approval` 与 `doom_loop` 用 `reply = once | always | reject`（`always` 对审批按「工具 + 连接 + 语句类别」记在会话里，并自动放行其他已满足的挂起请求；`reject` 带 `message` 时作为工具错误回灌、循环继续，不带说明时结束本步）。`question` 用 `answers`：每题一个字符串或字符串数组，可附 `message`。
+
+### 24.5 agent loop 机制（§16.2 的实现位置）
+
+| 机制 | 实现 |
+|---|---|
+| 工具边流边执行，只读并发 ≤ 4、写入与提问与浏览器工具按顺序 | `agent/step.go` executor |
+| 坏的工具调用：名字大小写/别名修正；参数按 schema 修复（深度 ≤ 6），修不好列出问题 + 原参数回灌 | `tools.Resolve`、`tools.Repair`、`tools.Registry.Call` |
+| 输出 > 2000 行或 50 KB 截断，完整内容存结果，提示 `read_result` 或子智能体 | `tools.Env.truncate` |
+| finish=length 续写最多两次；最后一步只总结 + `tool_choice=none`（保留工具定义） | `agent/loop.go` |
+| 错误分类与重试（2 秒起指数退避、封顶 10 秒、抖动、最多 10 次；retry-after 封顶 15 分钟；x-should-retry；网络不可达单独 1 小时预算）；上下文溢出触发压缩（0.85/0.7/0.5/0.35 逐级）；有输出后断流保存并开新一步 | `llm/errors.go`、`agent/retry.go`、`agent/step.go`、`agent/loop.go` |
+| 死循环检测 | `agent/step.go` doomCheck |
+| 审批三种答复 | `agent/run.go` respond、`agent/loop.go` approver |
+| 插话 / 排队 | `agent/service.go` Send、`agent/loop.go` flushSteer |
+| 停止、强制中断、重启恢复（残留运行与压缩标失败，没执行完的工具补「丢失」结果，回放丢掉没执行的调用与尾部空思考） | `agent/step.go` wait、`agent/service.go` Recover、`agent/context.go` toLLM |
+| 压缩：上限 = 窗口 − max(15%, 16k)，估算 = 上次实测 + 新增估算；保留最近约 15k token；固定模板，不合格补发一次 | `agent/compact.go` |
+| 系统提示固定 + `<system-update>`；Anthropic 缓存断点（系统、工具、最后一条、上一步前缀） | `agent/context.go`、`llm/anthropic.go` |
+| 子智能体 explore / analyst，可并发，`task_id` 续接 | `agent/sub.go` |
+| 计划清单、计划模式、标题、用量 | `tools/agenttools.go`、`agent/loop.go`、`agent/service.go` |
+
+新的 Claude 模型（Anthropic Messages 协议）思考参数用 `thinking:{type:"adaptive"}` + `output_config.effort`，较早的模型与兼容实现用 `budget_tokens`；按模型名先猜，供应商报参数不对时换另一种重试一次并记住。
+
+### 24.6 浏览器端工具（`client_call`）
+
+服务端推 `{"t":"client_call","d":{"id","tool","args"}}`，浏览器在主工作区执行后回 `{"t":"client_result","d":{"id","result"| "error"}}`（2 分钟超时）。只有用户有在线的浏览器连接时这些工具才出现在工具列表里；发消息时带 `X-Lemi-Conn` 头的那个连接优先。权限与审批在服务端先做完；`args.visible_connections` 是本次对智能体可见的连接 ID，浏览器不得操作其他连接的标签。浏览器回传的数据服务端会再按权限过滤。
+
+| 工具 | args | result |
+|---|---|---|
+| `workspace_open_table` | `{connection_id, db, table, where?, order_by?, columns?:[列名], visible_connections}` | `{tab_id, rows_loaded, total?, error?}` |
+| `workspace_run_sql` | `{connection_id, db?, sql, approved（写语句已审批）, visible_connections}` | `{tab_id, results:[{kind:"rows"\|"exec"\|"error", rows_loaded?, affected?, error?, duration_ms}]}` |
+| `workspace_update_view` | `{tab_id?（默认当前标签）, where?, order_by?, columns?, goto_row?, visible_connections}` | `{tab_id, connection_id, rows_loaded, error?}` |
+| `workspace_read_view` | `{tab_id?, max_rows（≤100）, visible_connections}` | `{tab_id, kind, connection_id, db, table, where, order_by, sql, selection:{rows:[行号], columns:[列名], cells?:[[行号,列名,值]]}, visible_rows_sample:{columns:[…], rows:[[…]]}, error?}` |
+
+`where` / `order_by` 是不含关键字的 SQL 片段，服务端已检查不能有多条语句；表格页按 §9 的只读查询执行。
+
+### 24.7 MCP 与 OAuth
+
+- `/mcp`：Streamable HTTP。请求头 `Mcp-Protocol-Version` ≥ `2026-07-28` 的走无会话处理器，其余（`2025-11-25`、`2025-06-18`、`2025-03-26`、`2024-11-05`）走有会话处理器（`Mcp-Session-Id`，空闲 30 分钟关闭）。两者共用同一个 MCP Server，工具处理函数每次按当前请求头里的令牌重新确认身份与授权，令牌吊销、账号停用立刻生效。
+- 鉴权失败 401，`WWW-Authenticate: Bearer resource_metadata="<对外地址>/.well-known/oauth-protected-resource"`。每个授权每分钟 120 次请求，超出 429 + `Retry-After`。
+- 防 DNS 重绑定：配置了 `LEMI_PUBLIC_URL` 时 Host 必须是它（或回环地址、IP）；没配置时，经回环地址直连（非受信代理转发）的请求 Host 也必须是回环地址或 IP。带 `Origin` 的请求必须与本站同源。
+- 工具：§16.3 中除 `workspace_*`、`todo_write`、`task`、`ask_user` 之外的全部；注解 `readOnlyHint`（只读工具）、`destructiveHint`（`execute_sql`）。`create_chart` 在 MCP 里额外返回最终 ECharts option JSON。写入的审批交给外部智能体（`execute_sql` 标了 destructive）。
+- 授权档位只能是 `hidden / read / write_auto / full`，且不高于用户在该连接上的实际档位（连接是「逐条确认」时最高只读）。
+
+公开端点（不走会话与 CSRF，允许跨域）：
+
+| 路径 | 说明 |
+|---|---|
+| `GET /.well-known/oauth-protected-resource[/mcp]` | 资源元数据（RFC 9728） |
+| `GET /.well-known/oauth-authorization-server[/mcp]`、`/.well-known/openid-configuration` | 授权服务器元数据（RFC 8414） |
+| `POST /oauth/register` | 动态注册公开客户端（RFC 7591），回调只允许 https、本机回环 http、自定义协议；每 IP 每小时 20 次 |
+| `GET /oauth/authorize` | 302 到前端确认页 `/connect/authorize?<原查询参数>` |
+| `POST /oauth/token` | `authorization_code`（PKCE S256 必须）与 `refresh_token`（每次轮换，旧的再用整条链作废；授权码重放作废已发令牌）；访问令牌 1 小时（`lemi_oat_`），刷新令牌 60 天（`lemi_ort_`），都不超过授权有效期 |
+| `POST /oauth/revoke` | RFC 7009，总是 200 |
+
+需要登录的接口：
+
+| 方法与路径 | 说明 |
+|---|---|
+| `POST /oauth/authorize-info` | 确认页加载：body 为原查询参数 `{response_type, client_id, redirect_uri, state, scope, code_challenge, code_challenge_method, resource}` → `{ok, error, error_description, client_id, client_name, redirect_host, levels, workspaces:[{id, name, role, connections:[{id, name, driver, env, ai_level, max_level}]}]}` |
+| `POST /oauth/consent` | 用户确认：上面的参数 + `{approve, workspace_id, levels:{连接ID: 档位}, expires_days（0 = 不过期）}` → `{redirect}`（前端跳过去；拒绝或参数错误时 redirect 带 `error`） |
+| `GET /me/mcp/grants` | 已授权应用 `{grants:[{id, kind, name, client_id, workspace_id, workspace_name, levels, expires_at, created_at, last_used_at, expired}]}` |
+| `DELETE /me/mcp/grants/{id}` | 吊销（全部令牌立刻失效） |
+| `GET /me/mcp/tokens` | 个人访问令牌 `{tokens:[…同上, token_hint]}` |
+| `POST /me/mcp/tokens` | 创建（需要 10 分钟内验证过身份 re-auth）`{name, workspace_id, levels, expires_days}` → `{token（lemi_pat_…，只显示这一次）, grant}` |
+| `DELETE /me/mcp/tokens/{id}` | 吊销 |
+| `GET /me/mcp/config` | 客户端配置片段 `{url, clients:[{id: claude-code\|cursor\|codex\|claude-desktop, name, format, file?, oauth, token}]}` |
+
+### 24.8 工具结果的 `data`（给界面）
+
+| 工具 | data |
+|---|---|
+| `list_connections` | `{connections:[{id, name, driver, env, ai_level, read_only, allow}]}` |
+| `run_query` | `{result_id, connection_id, db, sql, title, columns, rows（前 ≤100 行）, row_count, truncated, duration_ms}` |
+| `read_result` | `{result_id, columns, rows, total}` |
+| `explain_query` | `{format:"json", plan}` 或 `{format:"table", columns, rows}` |
+| `execute_sql` | `{connection_id, statements:[{statement, kind, affected, error, duration_ms, class}]}` |
+| `create_chart` | `{chart_id, title, rows}`；`create_diagram` / `er_diagram`：`{diagram_id, title}` |
+| `report_write` | `{report_id, title, created, warnings}` |
+| `todo_write` | `{todos}` |
+
+聊天正文里的 ` ```lemi-chart <id>``` `、` ```lemi-diagram <id>``` `、` ```lemi-table <结果ID>``` ` 由前端用 §24.3 的图表与结果接口渲染。
+
+### 24.9 报告
+
+| 方法与路径 | 说明 |
+|---|---|
+| `GET /workspaces/{ws}/reports` | 列表（查看者）`{reports:[{id, title, created_by, updated_by, conversation_id, task_id, created_at, updated_at, shared}]}` |
+| `POST /workspaces/{ws}/reports` | 新建（成员）`{title, body}` → `{report, warnings}` |
+| `GET /reports/{id}` | `{report:{id, workspace_id, title, body, snapshot:{charts:{id: 图表视图}, tables:{结果ID: {title, sql, columns, rows（≤1000）, total, truncated}}, diagrams:{id: 图视图}, missing}, share:{enabled, has_password, expires_at, created_at}\|null, …}}` |
+| `PUT /reports/{id}` | `{title?, body?}`，保存时重做快照（引用不到的沿用旧快照） |
+| `DELETE /reports/{id}` | 创建者或空间管理员 |
+| `GET /reports/{id}/export.md` | Markdown 导出：表格内嵌为 Markdown 表格，图表附数据表，图为 mermaid 代码块 |
+| `POST /reports/{id}/share` | 生成公开链接（创建者或空间管理员；受 `AllowPublicShare`）`{password?, expires_days?}` → `{token, path:"/share/reports/<token>", url, api:"/api/public/reports/<token>", expires_at, has_password}`；再次调用换新令牌 |
+| `DELETE /reports/{id}/share` | 撤销 |
+| `GET /api/public/reports/{token}`（公开） | 只读 JSON `{report:{title, body, snapshot, updated_at, expires_at}}`；有密码时放在请求头 `X-Lemi-Report-Password`，缺少回 401 `password_required`、错误回 401 `bad_password`；每 IP 每分钟 30 次，密码错误每分钟 5 次 |
+
+引用块：单独成行的 ` ```lemi-chart <id>``` `，或多行（开头一行 ` ```lemi-table <id> `，下面到 ` ``` ` 为说明文字）。`lemi-table` 只能引用自己的结果（结果保留 7 天，快照后不再依赖）。
+
+### 24.10 定时智能体任务
+
+| 方法与路径 | 说明 |
+|---|---|
+| `GET /workspaces/{ws}/agent-tasks` | 列表（成员）`{tasks:[任务视图 + running]}` |
+| `POST /workspaces/{ws}/agent-tasks` | 新建（空间管理员）`Input` → `{task}` |
+| `GET/PUT/DELETE /agent-tasks/{id}` | 查看（成员）/ 修改 / 删除（空间管理员） |
+| `POST /agent-tasks/{id}/run` | 立即运行 → `{run_id}`（同一任务同时只跑一个，全局最多 4 个） |
+| `POST /agent-tasks/{id}/stop` | 停止 → `{stopped}` |
+| `GET /agent-tasks/{id}/runs?limit=` | 运行记录 `{runs:[{id, conversation_id, trigger, status, summary, report_id, error, started_at, finished_at}]}` |
+| `GET /agent-tasks/{id}/runs/{run}/transcript` | 完整过程 `{conversation, messages, todos, run}` |
+
+`Input`：`{name, schedule（§sched.Spec：kind hourly|daily|weekly|monthly|cron|manual …）, prompt, model, effort, connections:{连接ID: read|write_auto|full}（空值 = 只读；不高于运行身份在该连接上的实际档位）, channels:[通知渠道ID], notify_on: always|failure|never, enabled, owner_id（以谁的身份运行，默认创建者）}`。任务视图另有 `schedule_text, next_run_at, last_run_at, last_status`。
+
+每次运行是一段独立对话（`kind=task`），无人值守：需要确认的写入一律拒绝、没有 `ask_user` 与浏览器工具；最后一条助手文字作为摘要，最后写的报告记为 `report_id`，按 `notify_on` 经 `TaskNotifier` 发出（链接 `<对外地址>/agent-tasks/<任务ID>?run=<运行ID>`）。
+
+### 24.11 模型供应商（实例管理员）
+
+| 方法与路径 | 说明 |
+|---|---|
+| `GET /admin/ai` | `{providers:[{id, kind, name, base_url, protocol, models, auto_models, enabled, api_key:{set}}], default_model, protocols}` |
+| `POST /admin/ai/providers` | 新建 `{kind:"opencode-go"\|"custom", name, base_url, api_key, protocol, models:[{id, name, context, max_output, vision, efforts}], auto_models, enabled}` |
+| `PUT /admin/ai/providers/{id}` | 修改（`api_key` 为空表示不变；自定义地址换了主机必须重填密钥） |
+| `DELETE /admin/ai/providers/{id}` | 删除 |
+| `GET /admin/ai/providers/{id}/models?fetch=1` | 当前模型列表；`fetch=1` 时自定义供应商从 `<base_url>/models` 现拉 |
+| `POST /admin/ai/providers/test` | 不保存先测试：同新建参数 + `provider_id?`（沿用已存密钥）+ `model?`（发一句话）→ `{ok, models, reply?, error?}` |
+| `PUT /admin/ai/settings` | `{default_model}` |
+
+- 密钥用主密钥加密（AAD = `ai_providers` + ID + `api_key`），接口只返回 `{set}`。
+- OpenCode Go：模型列表 `GET https://opencode.ai/zen/go/v1/models`（`base_url` 可覆盖），每个模型按推荐协议与它自己的 base_url 调用；请求带 `x-opencode-session`（会话 ID 的 ASCII 部分）与 `User-Agent: lemi/<版本>`。首次启动若设置了 `LEMI_OPENCODE_API_KEY` 且还没有任何供应商，自动写入；`LEMI_LLM_DEFAULT_MODEL` 写入实例默认模型。
+- 自定义供应商的地址经 netsafe：内网地址需要实例管理员打开 `AllowPrivateEgress`，建连时按实际 IP 检查（防 DNS 重绑定）。
+- 模型引用 `ref` = `<供应商 ID>/<模型 ID>`。默认模型的选择顺序：空间默认 → 实例默认 → 推荐模型里套餐额度最大的。
+- `/api/v1/bootstrap` 附加 `ai:{configured}`。

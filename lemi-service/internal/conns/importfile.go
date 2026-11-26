@@ -58,7 +58,7 @@ type csvReader struct {
 }
 
 func (c *csvReader) Next() ([]string, error) { return c.r.Read() }
-func (c *csvReader) Close() error             { return c.f.Close() }
+func (c *csvReader) Close() error            { return c.f.Close() }
 
 type xlsxReader struct {
 	f    *excelize.File

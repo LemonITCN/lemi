@@ -83,7 +83,9 @@ func (c *Conn) kv(ctx context.Context, q string) (map[string]string, error) {
 }
 
 // Status 全局状态变量。
-func (c *Conn) Status(ctx context.Context) (map[string]string, error) { return c.kv(ctx, "SHOW GLOBAL STATUS") }
+func (c *Conn) Status(ctx context.Context) (map[string]string, error) {
+	return c.kv(ctx, "SHOW GLOBAL STATUS")
+}
 
 // Variables 全局变量。
 func (c *Conn) Variables(ctx context.Context) (map[string]string, error) {

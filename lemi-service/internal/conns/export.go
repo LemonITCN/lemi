@@ -29,17 +29,17 @@ var Downloads *downloads.Store
 
 // ExportRequest 导出请求：sql 或 表 + 条件 二选一。
 type ExportRequest struct {
-	SQL       string `json:"sql"`
-	Database  string `json:"db"`
-	Table     string `json:"table"`
-	Where     string `json:"where"`
-	OrderBy   string `json:"order_by"`
-	Format    string `json:"format"` // csv | tsv | json | sql | markdown | xlsx
-	Header    *bool  `json:"header"`
-	NullText  string `json:"null_text"`
-	SQLTable  string `json:"sql_table"` // SQL INSERT 用的表名
-	MaxRows   int    `json:"max_rows"`
-	Filename  string `json:"filename"`
+	SQL      string `json:"sql"`
+	Database string `json:"db"`
+	Table    string `json:"table"`
+	Where    string `json:"where"`
+	OrderBy  string `json:"order_by"`
+	Format   string `json:"format"` // csv | tsv | json | sql | markdown | xlsx
+	Header   *bool  `json:"header"`
+	NullText string `json:"null_text"`
+	SQLTable string `json:"sql_table"` // SQL INSERT 用的表名
+	MaxRows  int    `json:"max_rows"`
+	Filename string `json:"filename"`
 }
 
 var exportTypes = map[string][2]string{

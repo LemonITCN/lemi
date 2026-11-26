@@ -18,7 +18,9 @@ type Error struct {
 func (e *Error) Error() string { return e.Message }
 
 // New 创建错误。
-func New(status int, code, msg string) *Error { return &Error{Status: status, Code: code, Message: msg} }
+func New(status int, code, msg string) *Error {
+	return &Error{Status: status, Code: code, Message: msg}
+}
 
 // Bad 请求不正确（400）。
 func Bad(format string, a ...any) *Error {
