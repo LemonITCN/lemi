@@ -30,11 +30,14 @@ const connMissing = computed(() => !conn.value && !conns.loading && conns.list.l
 const sqlite = computed(() => dialectOf(conn.value) === 'sqlite')
 const canKill = computed(() => conn.value?.access === 'manage')
 
+// 进程列表与慢查询含其他会话的 SQL 原文，服务端只对连接管理者开放（其他人不显示这两个分区）
 const sections = computed(() => sqlite.value
   ? [{ value: 'status', label: t('monitor.sec.file') }, { value: 'variables', label: t('monitor.sec.compile') }, { value: 'tables', label: t('monitor.sec.tables') }]
   : [
-    { value: 'processes', label: t('monitor.sec.processes') }, { value: 'status', label: t('monitor.sec.status') }, { value: 'variables', label: t('monitor.sec.variables') },
-    { value: 'tables', label: t('monitor.sec.tables') }, { value: 'slow', label: t('monitor.sec.slow') },
+    ...(canKill.value ? [{ value: 'processes', label: t('monitor.sec.processes') }] : []),
+    { value: 'status', label: t('monitor.sec.status') }, { value: 'variables', label: t('monitor.sec.variables') },
+    { value: 'tables', label: t('monitor.sec.tables') },
+    ...(canKill.value ? [{ value: 'slow', label: t('monitor.sec.slow') }] : []),
   ])
 
 const section = ref<Section>((props.tab.params.section as Section) || '')
