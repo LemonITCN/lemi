@@ -12,6 +12,8 @@
 #   LEMI_VERSION         版本号（默认：HEAD 正好是 v* 标签时取标签，否则取 internal/version 里的值）
 #   OUT                  输出目录（默认 <仓库>/dist，已在 .gitignore）
 #   MACOS_SIGN_IDENTITY  在 Mac 上编 darwin 目标时的签名身份（例如 "Lemi Code Signing"）；不设则临时签名
+#   npm_config_registry  npm 源（npm 自己读这个变量）。国内网络：npm_config_registry=https://registry.npmmirror.com scripts/build.sh
+#   GOPROXY              Go 模块代理。国内网络：GOPROXY=https://goproxy.cn,direct
 #
 # 产物：
 #   <输出目录>/bin/<系统>-<架构>/lemi(.exe)

@@ -186,9 +186,17 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
           cache-dependency-path: lemi-service/go.sum
-      - name: 服务器版本
-        run: mysql -h 127.0.0.1 -P 3306 -uroot -p"$DB_PASSWORD" -N -e 'SELECT VERSION()' 2>/dev/null || echo "（runner 上没有 mysql 客户端，跳过）"
-      - name: 集成测试（连接服务、自研导出器往返、备份）
+      - name: 服务器版本与参数（服务容器不能带启动参数，改全局变量，与 scripts/test-sqldump.sh 一致）
+        env:
+          DB_CONTAINER: ${{ job.services.db.id }}
+          CLIENT: ${{ startsWith(matrix.image, 'mariadb') && 'mariadb' || 'mysql' }}
+        run: |
+          docker exec "$DB_CONTAINER" "$CLIENT" --protocol=TCP -h127.0.0.1 -uroot -p"$DB_PASSWORD" -N -e \
+            "SET GLOBAL max_allowed_packet = 268435456; SET GLOBAL event_scheduler = OFF; SELECT VERSION(), @@global.max_allowed_packet"
+      - name: 集成测试（连接服务、自研导出器往返与官方客户端交叉、备份）
+        env:
+          # 有它时 sqldump 额外跑与容器里官方 mysql / mysqldump 的交叉测试
+          LEMI_TEST_MYSQL_DOCKER: ${{ matrix.key }}=${{ job.services.db.id }}
         run: |
           PKGS=()
           for p in ./internal/conns/ ./internal/sqldump/ ./internal/backup/...; do
@@ -201,7 +209,7 @@ jobs:
           done
           printf '测试包：%s\n' "${PKGS[@]}"
           # 同一台数据库，包之间串行，避免互相删库
-          go test -count=1 -p 1 -timeout 40m "${PKGS[@]}"
+          go test -count=1 -p 1 -timeout 60m "${PKGS[@]}"
 
   build:
     name: 交叉编译（6 个平台）
