@@ -1,0 +1,15 @@
+# Caddy 配置（配合 docker-compose.caddy.yml）。域名来自环境变量 LEMI_DOMAIN，证书自动申请与续期。
+
+{$LEMI_DOMAIN} {
+	encode zstd gzip
+
+	# Caddy 会自动带上 X-Forwarded-For / X-Forwarded-Proto / X-Forwarded-Host，并原样转发 Host 头
+	reverse_proxy lemi:7700 {
+		# 智能体流式输出（SSE）与 WebSocket 不缓冲
+		flush_interval -1
+	}
+
+	header {
+		-Server
+	}
+}
