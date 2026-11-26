@@ -305,6 +305,17 @@ func (s *Service) Routes(srv *web.Server, r chi.Router) {
 		srv.AuditR(r, audit.Entry{Action: "mcp.token_revoked", Target: chi.URLParam(r, "id"), OK: true}, nil)
 		return web.OK(w, map[string]any{"ok": true})
 	}))
+	r.Get("/me/mcp/choices", h(func(w http.ResponseWriter, r *http.Request) error {
+		ws := r.URL.Query().Get("workspace")
+		if _, err := srv.RequireWS(r, ws, "viewer"); err != nil {
+			return err
+		}
+		ch, err := s.Choices(r.Context(), web.UserOf(r), ws)
+		if err != nil {
+			return err
+		}
+		return web.OK(w, map[string]any{"connections": ch, "levels": mcpLevels})
+	}))
 	r.Get("/me/mcp/config", h(func(w http.ResponseWriter, r *http.Request) error {
 		return web.OK(w, ConfigSnippets(s.Base(r)+"/mcp"))
 	}))

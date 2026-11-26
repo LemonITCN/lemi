@@ -1,15 +1,29 @@
+<script lang="ts">
+// 叠放顺序：后打开的弹窗在上面。全局弹窗（二次验证、确认框）挂在页面前部，只靠 DOM 顺序会被已打开的弹窗盖住。
+// 按当前打开的层数排（不会一直涨上去，菜单 1200、提示 1100 仍在弹窗之上）。
+let openCount = 0
+</script>
+
 <script setup lang="ts">
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle, DialogDescription, DialogClose } from 'reka-ui'
 import IconBtn from './IconBtn.vue'
 const open = defineModel<boolean>('open', { default: false })
 withDefaults(defineProps<{ title?: string; width?: number | string; padded?: boolean; hideClose?: boolean }>(), { width: 440, padded: true })
+const z = ref(1000)
+let counted = false
+watch(open, (o) => {
+  if (o && !counted) { counted = true; openCount++; z.value = 1000 + 2 * openCount }
+  else if (!o && counted) { counted = false; openCount = Math.max(0, openCount - 1) }
+}, { immediate: true })
+onBeforeUnmount(() => { if (counted) openCount = Math.max(0, openCount - 1) })
 </script>
 
 <template>
   <DialogRoot v-model:open="open">
     <DialogPortal>
-      <DialogOverlay class="overlay" />
-      <DialogContent class="modal" :style="{ width: typeof width === 'number' ? width + 'px' : width }" :aria-describedby="undefined">
+      <DialogOverlay class="overlay" :style="{ zIndex: z }" />
+      <DialogContent class="modal" :style="{ width: typeof width === 'number' ? width + 'px' : width, zIndex: z + 1 }" :aria-describedby="undefined">
         <div v-if="title || !hideClose" class="head">
           <DialogTitle class="title">{{ title }}</DialogTitle>
           <DialogClose v-if="!hideClose" as-child><IconBtn icon="close" :label="$t('common.close')" /></DialogClose>

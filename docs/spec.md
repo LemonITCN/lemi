@@ -824,7 +824,7 @@ NotifyTask(ctx, n tasks.TaskNotification) error
 
 | 方法与路径 | 说明 |
 |---|---|
-| `GET /workspaces/{ws}/ai/models` | 空间可用模型 `{configured, models:[{ref, id, name, provider_id, provider_name, context, max_output, vision, efforts, default_effort, api, featured}], default, errors}`（查看者及以上） |
+| `GET /workspaces/{ws}/ai/models` | 空间可用模型 `{configured, models:[{ref, id, name, provider_id, provider_name, context, max_output, vision, efforts, default_effort, api, featured}], default, errors}`（查看者及以上）；`?all=1` 返回实例全部可用模型、不按空间设置过滤（空间 AI 设置页选模型用） |
 | `GET/PUT /workspaces/{ws}/ai/settings` | 空间 AI 设置 `{models:[ref], default_model, instructions}`；`models` 为空表示全部可用；PUT 要空间管理员 |
 | `GET/PUT /me/ai` | 个人自定义指令 `{instructions}`（≤ 8000 字） |
 | `GET /workspaces/{ws}/agent/conversations?kind=chat\|task&archived=1&limit=` | 我的会话列表（成员及以上） |
@@ -953,6 +953,7 @@ WebSocket 消息 `{"t":"run_event","d":{"run_id","conversation_id","seq","type",
 | `GET /me/mcp/tokens` | 个人访问令牌 `{tokens:[…同上, token_hint]}` |
 | `POST /me/mcp/tokens` | 创建（需要 10 分钟内验证过身份 re-auth）`{name, workspace_id, levels, expires_days}` → `{token（lemi_pat_…，只显示这一次）, grant}` |
 | `DELETE /me/mcp/tokens/{id}` | 吊销 |
+| `GET /me/mcp/choices?workspace=` | 当前用户在该空间可授权的连接与档位上限 `{connections:[{id, name, driver, env, ai_level, max_level}], levels}`（建令牌、定时任务选档位用；查看者及以上） |
 | `GET /me/mcp/config` | 客户端配置片段 `{url, clients:[{id: claude-code\|cursor\|codex\|claude-desktop, name, format, file?, oauth, token}]}` |
 
 ### 24.8 工具结果的 `data`（给界面）
