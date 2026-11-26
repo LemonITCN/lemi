@@ -60,6 +60,12 @@ func (f *fakeNotify) kinds() []string {
 type fixture struct {
 	s      *Service
 	cs     *conns.Service
+	st     *store.Store
+	acc    *accounts.Service
+	set    *settings.Service
+	box    *crypt.Box
+	au     *audit.Log
+	dl     *downloads.Store
 	owner  *accounts.User
 	viewer *accounts.User
 	ws     string
@@ -102,10 +108,11 @@ func setup(t *testing.T) *fixture {
 	cs := conns.New(st, acc, set, box, au, log, driver.SQLiteEnv{AllowedDirs: []string{allowed}, UploadDir: filepath.Join(dir, "sqlite")})
 	t.Cleanup(func() { cs.Close() })
 	nt := &fakeNotify{}
+	dl := downloads.New()
 	s := New(Deps{Store: st, Conns: cs, Accounts: acc, Settings: set, Box: box, Audit: au, Hub: realtime.New(log), Log: log, Notify: nt,
-		Downloads: downloads.New(), DataDir: dir})
+		Downloads: dl, DataDir: dir})
 	t.Cleanup(func() { s.Close() })
-	return &fixture{s: s, cs: cs, owner: owner, viewer: viewer, ws: ws.ID, dir: dir, nt: nt}
+	return &fixture{s: s, cs: cs, st: st, acc: acc, set: set, box: box, au: au, dl: dl, owner: owner, viewer: viewer, ws: ws.ID, dir: dir, nt: nt}
 }
 
 // sqliteDB 在白名单目录里建一个 SQLite 文件并写入测试数据，返回连接。
