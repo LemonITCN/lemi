@@ -1,0 +1,27 @@
+/* CodeMirror 语法颜色：按主题切换的 CSS 变量 */
+html, html[data-theme="light"] {
+  --cm-kw: #1f5fbf;
+  --cm-str: #2a7a3b;
+  --cm-num: #b0531a;
+  --cm-comment: #8a8984;
+  --cm-fn: #7a3fb0;
+  --cm-type: #0f7b8a;
+  --cm-ident: #8a5a0b;
+  --cm-op: #5d5c58;
+  --cm-selection: rgba(47, 111, 222, .2);
+  --cm-active-line: rgba(55, 53, 47, .035);
+  --cm-match: rgba(203, 145, 47, .22);
+}
+html[data-theme="dark"] {
+  --cm-kw: #7aa7f0;
+  --cm-str: #8ac78f;
+  --cm-num: #e2a272;
+  --cm-comment: #7c7b76;
+  --cm-fn: #c49ae8;
+  --cm-type: #6ec5cf;
+  --cm-ident: #d9b56c;
+  --cm-op: #b0afab;
+  --cm-selection: rgba(94, 135, 201, .35);
+  --cm-active-line: rgba(255, 255, 255, .035);
+  --cm-match: rgba(202, 152, 73, .25);
+}
