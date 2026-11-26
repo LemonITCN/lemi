@@ -1,0 +1,16 @@
+.secrets/
+.DS_Store
+node_modules/
+lemi-console/dist/
+lemi-service/internal/web/dist/*
+!lemi-service/internal/web/dist/.keep
+lemi-service/bin/
+/dist/
+*.local
+.env
+.env.*
+*.exe
+*.syso
+*.test
+*.out
+coverage.*
