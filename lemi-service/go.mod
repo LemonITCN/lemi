@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/go-sql-driver/mysql v1.10.2
 	github.com/gofrs/flock v0.13.2
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/kardianos/service v1.3.0
@@ -16,8 +17,8 @@ require (
 )
 
 require (
+	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
-	github.com/go-sql-driver/mysql v1.10.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
