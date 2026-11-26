@@ -270,11 +270,11 @@ type ApplyResult struct {
 }
 
 type stmt struct {
-	sql       string
-	args      []any
-	display   string
-	needOne   bool
-	isInsert  bool
+	sql      string
+	args     []any
+	display  string
+	needOne  bool
+	isInsert bool
 }
 
 const defaultMarker = "\x00lemi-default\x00"

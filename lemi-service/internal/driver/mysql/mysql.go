@@ -69,9 +69,11 @@ type Conn struct {
 	mu      sync.Mutex
 	info    *driver.ServerInfo
 	mariadb bool
-	major   int
-	minor   int
-	patch   int
+	// plaintext 「优先加密」握手失败后退回了不加密连接（界面上提示）
+	plaintext bool
+	major     int
+	minor     int
+	patch     int
 }
 
 func buildTLS(cfg *driver.ConnConfig, host string) (*tls.Config, bool, error) {
@@ -83,7 +85,7 @@ func buildTLS(cfg *driver.ConnConfig, host string) (*tls.Config, bool, error) {
 	case "disable":
 		return nil, false, nil
 	case "preferred":
-		return &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, true, nil
+		return legacyTLS(&tls.Config{InsecureSkipVerify: true}), true, nil
 	}
 	tc := &tls.Config{MinVersion: tls.VersionTLS12}
 	if certPEM, keyPEM := cfg.Str("tls_cert"), cfg.Str("tls_key"); certPEM != "" || keyPEM != "" {
@@ -96,6 +98,7 @@ func buildTLS(cfg *driver.ConnConfig, host string) (*tls.Config, bool, error) {
 	switch mode {
 	case "required":
 		tc.InsecureSkipVerify = true
+		legacyTLS(tc)
 	case "verify-ca", "verify-full":
 		pool := x509.NewCertPool()
 		if ca := cfg.Str("tls_ca"); ca != "" {
@@ -208,13 +211,59 @@ func (d *Driver) Open(ctx context.Context, cfg *driver.ConnConfig) (driver.Conn,
 	c := &Conn{db: db, cfg: cfg}
 	if err := c.Ping(ctx); err != nil {
 		db.Close()
-		return nil, friendlyErr(err)
+		// 「优先加密」：加密建立不起来时退回不加密（与 MySQL 客户端 --ssl-mode=PREFERRED 的定义一致）
+		if fallback && isTLSErr(err) {
+			mc.TLS = nil
+			mc.AllowCleartextPasswords = false
+			connector, cerr := gomysql.NewConnector(mc)
+			if cerr != nil {
+				return nil, cerr
+			}
+			db = sql.OpenDB(connector)
+			db.SetMaxOpenConns(10)
+			db.SetMaxIdleConns(3)
+			db.SetConnMaxIdleTime(5 * time.Minute)
+			db.SetConnMaxLifetime(time.Hour)
+			c = &Conn{db: db, cfg: cfg, plaintext: true}
+			if err2 := c.Ping(ctx); err2 != nil {
+				db.Close()
+				return nil, friendlyErr(err2)
+			}
+		} else {
+			return nil, friendlyErr(err)
+		}
 	}
 	if _, err := c.Server(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return c, nil
+}
+
+// legacyTLS 不校验证书的两种模式（优先加密、必须加密）兼容老服务器：MySQL 5.7 的部分构建只支持 TLS 1.0/1.1
+// 或 RSA 密钥交换套件。这两种模式本来就不防中间人，放宽版本不降低它们的安全性；校验证书的模式仍要求 TLS 1.2+。
+func legacyTLS(tc *tls.Config) *tls.Config {
+	tc.MinVersion = tls.VersionTLS10
+	var suites []uint16
+	for _, s := range tls.CipherSuites() {
+		suites = append(suites, s.ID)
+	}
+	for _, s := range tls.InsecureCipherSuites() {
+		switch s.ID {
+		case tls.TLS_RSA_WITH_AES_128_CBC_SHA, tls.TLS_RSA_WITH_AES_256_CBC_SHA, tls.TLS_RSA_WITH_AES_128_GCM_SHA256, tls.TLS_RSA_WITH_AES_256_GCM_SHA384:
+			suites = append(suites, s.ID)
+		}
+	}
+	tc.CipherSuites = suites
+	return tc
+}
+
+func isTLSErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "tls:") || strings.Contains(m, "handshake") || strings.Contains(m, "x509")
 }
 
 func validTZ(tz string) bool {
@@ -259,7 +308,7 @@ func (c *Conn) Server(ctx context.Context) (driver.ServerInfo, error) {
 	if err := c.db.QueryRowContext(ctx, "SELECT VERSION(), @@version_comment").Scan(&ver, &comment); err != nil {
 		return driver.ServerInfo{}, err
 	}
-	info := driver.ServerInfo{Product: "MySQL", Version: ver, Extra: map[string]any{"comment": comment}}
+	info := driver.ServerInfo{Product: "MySQL", Version: ver, Extra: map[string]any{"comment": comment, "tls_fallback_plaintext": c.plaintext}}
 	if strings.Contains(strings.ToLower(ver+comment), "mariadb") {
 		info.Product = "MariaDB"
 		c.mariadb = true

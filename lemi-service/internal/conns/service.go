@@ -514,7 +514,9 @@ func (s *Service) Access(ctx context.Context, u *accounts.User, c *Connection) s
 }
 
 // CanWrite 是否可以写数据（考虑连接级只读）。
-func CanWrite(c *Connection, level string) bool { return !c.ReadOnly && LevelAtLeast(level, LevelWrite) }
+func CanWrite(c *Connection, level string) bool {
+	return !c.ReadOnly && LevelAtLeast(level, LevelWrite)
+}
 
 // Require 取连接并要求至少 min 权限，返回连接与权限。
 func (s *Service) Require(ctx context.Context, u *accounts.User, id, min string) (*Connection, string, error) {

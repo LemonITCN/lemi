@@ -59,11 +59,11 @@ type Session struct {
 
 // Service 认证服务。
 type Service struct {
-	st   *store.Store
-	acc  *accounts.Service
-	set  *settings.Service
-	box  *crypt.Box
-	now  func() time.Time
+	st      *store.Store
+	acc     *accounts.Service
+	set     *settings.Service
+	box     *crypt.Box
+	now     func() time.Time
 	OnEvent func(ctx context.Context, kind string, u *accounts.User, ip, ua string) // 安全事件（锁定、新设备登录）回调，由通知模块注入
 }
 

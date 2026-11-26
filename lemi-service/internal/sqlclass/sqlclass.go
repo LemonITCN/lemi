@@ -31,11 +31,11 @@ type TableRef struct {
 
 // Info 是分类结果。
 type Info struct {
-	Kind      Kind       `json:"kind"`
-	Keyword   string     `json:"keyword"` // 主关键字（大写）
-	ReturnsRows bool     `json:"returns_rows"`
-	Tables    []TableRef `json:"tables,omitempty"`
-	Dangerous string     `json:"dangerous,omitempty"` // 危险原因（DROP、TRUNCATE、无 WHERE 的 UPDATE/DELETE）
+	Kind        Kind       `json:"kind"`
+	Keyword     string     `json:"keyword"` // 主关键字（大写）
+	ReturnsRows bool       `json:"returns_rows"`
+	Tables      []TableRef `json:"tables,omitempty"`
+	Dangerous   string     `json:"dangerous,omitempty"` // 危险原因（DROP、TRUNCATE、无 WHERE 的 UPDATE/DELETE）
 	// TablesComplete 表引用是否解析完整（含无法解析的结构时为 false，白名单检查应拒绝）
 	TablesComplete bool `json:"tables_complete"`
 }
@@ -65,10 +65,10 @@ func (i Info) IsWrite() bool {
 }
 
 type token struct {
-	t    byte   // w=单词 q=引号标识符 s=字符串 n=数字 p=标点
-	v    string // 单词为大写原文，标识符为去引号后的名字
-	raw  string
-	pos  int
+	t   byte   // w=单词 q=引号标识符 s=字符串 n=数字 p=标点
+	v   string // 单词为大写原文，标识符为去引号后的名字
+	raw string
+	pos int
 }
 
 // tokenize 词法切分：跳过注释（条件注释 /*! */ 的内容当作正文），识别字符串与引号标识符。
@@ -553,9 +553,9 @@ var reserved = func() map[string]bool {
 
 // SelectCol 是简单查询里的一列。
 type SelectCol struct {
-	Star   bool   // *
-	Name   string // 原始列名
-	Alias  string // 结果列名
+	Star  bool   // *
+	Name  string // 原始列名
+	Alias string // 结果列名
 }
 
 // SimpleSelect 是「单表、无聚合」的查询，结果可以回写（§9.4）。

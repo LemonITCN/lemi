@@ -93,50 +93,50 @@ type ObjectInfo struct {
 
 // TableInfo 是表的完整结构。
 type TableInfo struct {
-	Database    string            `json:"database"`
-	Name        string            `json:"name"`
-	Kind        string            `json:"kind"` // table | view
-	Comment     string            `json:"comment,omitempty"`
-	Engine      string            `json:"engine,omitempty"`
-	Charset     string            `json:"charset,omitempty"`
-	Collation   string            `json:"collation,omitempty"`
-	RowsEst     int64             `json:"rows_est,omitempty"`
-	AutoInc     int64             `json:"auto_increment,omitempty"`
-	Columns     []ColumnInfo      `json:"columns"`
-	Indexes     []IndexInfo       `json:"indexes"`
-	ForeignKeys []ForeignKeyInfo  `json:"foreign_keys"`
-	Referenced  []ForeignKeyInfo  `json:"referenced_by"` // 其他表引用本表的外键
-	Triggers    []ObjectInfo      `json:"triggers"`
-	Key         []string          `json:"key"` // 编辑用的行键（主键 / 非空唯一键 / rowid）
-	KeyKind     string            `json:"key_kind,omitempty"` // primary | unique | rowid
-	DDL         string            `json:"ddl,omitempty"`
-	Options     map[string]string `json:"options,omitempty"`
-	WithoutRowid bool             `json:"without_rowid,omitempty"`
+	Database     string            `json:"database"`
+	Name         string            `json:"name"`
+	Kind         string            `json:"kind"` // table | view
+	Comment      string            `json:"comment,omitempty"`
+	Engine       string            `json:"engine,omitempty"`
+	Charset      string            `json:"charset,omitempty"`
+	Collation    string            `json:"collation,omitempty"`
+	RowsEst      int64             `json:"rows_est,omitempty"`
+	AutoInc      int64             `json:"auto_increment,omitempty"`
+	Columns      []ColumnInfo      `json:"columns"`
+	Indexes      []IndexInfo       `json:"indexes"`
+	ForeignKeys  []ForeignKeyInfo  `json:"foreign_keys"`
+	Referenced   []ForeignKeyInfo  `json:"referenced_by"` // 其他表引用本表的外键
+	Triggers     []ObjectInfo      `json:"triggers"`
+	Key          []string          `json:"key"`                // 编辑用的行键（主键 / 非空唯一键 / rowid）
+	KeyKind      string            `json:"key_kind,omitempty"` // primary | unique | rowid
+	DDL          string            `json:"ddl,omitempty"`
+	Options      map[string]string `json:"options,omitempty"`
+	WithoutRowid bool              `json:"without_rowid,omitempty"`
 }
 
 // ColumnInfo 是列。
 type ColumnInfo struct {
-	Name          string   `json:"name"`
-	Type          string   `json:"type"` // 完整类型，例如 varchar(64)、int unsigned
-	DataType      string   `json:"data_type"`
-	Kind          string   `json:"kind"`
-	Nullable      bool     `json:"nullable"`
-	Default       *string  `json:"default"` // nil = 没有默认值；"NULL" 字面量单独处理
-	DefaultIsExpr bool     `json:"default_is_expr,omitempty"`
-	AutoIncrement bool     `json:"auto_increment,omitempty"`
-	Generated     string   `json:"generated,omitempty"` // virtual | stored
-	GenerationExpr string  `json:"generation_expr,omitempty"`
-	Comment       string   `json:"comment,omitempty"`
-	Charset       string   `json:"charset,omitempty"`
-	Collation     string   `json:"collation,omitempty"`
-	Length        int64    `json:"length,omitempty"`
-	Precision     int      `json:"precision,omitempty"`
-	Scale         int      `json:"scale,omitempty"`
-	Unsigned      bool     `json:"unsigned,omitempty"`
-	EnumValues    []string `json:"enum_values,omitempty"`
-	Extra         string   `json:"extra,omitempty"`
-	PrimaryKey    bool     `json:"primary_key,omitempty"`
-	Invisible     bool     `json:"invisible,omitempty"`
+	Name           string   `json:"name"`
+	Type           string   `json:"type"` // 完整类型，例如 varchar(64)、int unsigned
+	DataType       string   `json:"data_type"`
+	Kind           string   `json:"kind"`
+	Nullable       bool     `json:"nullable"`
+	Default        *string  `json:"default"` // nil = 没有默认值；"NULL" 字面量单独处理
+	DefaultIsExpr  bool     `json:"default_is_expr,omitempty"`
+	AutoIncrement  bool     `json:"auto_increment,omitempty"`
+	Generated      string   `json:"generated,omitempty"` // virtual | stored
+	GenerationExpr string   `json:"generation_expr,omitempty"`
+	Comment        string   `json:"comment,omitempty"`
+	Charset        string   `json:"charset,omitempty"`
+	Collation      string   `json:"collation,omitempty"`
+	Length         int64    `json:"length,omitempty"`
+	Precision      int      `json:"precision,omitempty"`
+	Scale          int      `json:"scale,omitempty"`
+	Unsigned       bool     `json:"unsigned,omitempty"`
+	EnumValues     []string `json:"enum_values,omitempty"`
+	Extra          string   `json:"extra,omitempty"`
+	PrimaryKey     bool     `json:"primary_key,omitempty"`
+	Invisible      bool     `json:"invisible,omitempty"`
 }
 
 // IndexInfo 是索引。

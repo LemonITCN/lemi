@@ -106,6 +106,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
+        shell: bash
         working-directory: lemi-service
     steps:
       - uses: actions/checkout@v7
@@ -178,6 +179,7 @@ jobs:
       LEMI_TEST_MYSQL: '${{ matrix.key }}=root:lemi-ci-${{ github.run_id }}@tcp(127.0.0.1:3306)/'
     defaults:
       run:
+        shell: bash
         working-directory: lemi-service
     steps:
       - uses: actions/checkout@v7
@@ -370,6 +372,7 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
+        shell: bash
         working-directory: lemi-service
     steps:
       - uses: actions/checkout@v7

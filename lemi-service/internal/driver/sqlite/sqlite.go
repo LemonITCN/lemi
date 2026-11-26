@@ -268,8 +268,8 @@ func (c *Conn) Hooks() driver.SessionHooks { return hooks{} }
 type hooks struct{}
 
 func (hooks) Init(ctx context.Context, conn *sql.Conn, o driver.SessionOptions) error { return nil }
-func (hooks) SessionID(ctx context.Context, conn *sql.Conn) string                  { return "" }
-func (hooks) Cancel(ctx context.Context, db *sql.DB, id string) error                { return nil }
+func (hooks) SessionID(ctx context.Context, conn *sql.Conn) string                    { return "" }
+func (hooks) Cancel(ctx context.Context, db *sql.DB, id string) error                 { return nil }
 func (hooks) Use(ctx context.Context, conn *sql.Conn, db string) error {
 	if db != "" && db != "main" {
 		return errors.New("SQLite 连接只有 main 库")
