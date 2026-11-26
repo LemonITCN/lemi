@@ -1,0 +1,1015 @@
+[
+  {
+    "name": "mysql/basic",
+    "dialect": "mysql",
+    "input": "SELECT 1; SELECT 2;",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ],
+    "startLines": [
+      1,
+      1
+    ]
+  },
+  {
+    "name": "mysql/last statement without delimiter",
+    "dialect": "mysql",
+    "input": "SELECT 1;\nSELECT 2",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ],
+    "startLines": [
+      1,
+      2
+    ]
+  },
+  {
+    "name": "mysql/empty statements dropped",
+    "dialect": "mysql",
+    "input": ";;; SELECT 1;;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/empty input",
+    "dialect": "mysql",
+    "input": "",
+    "statements": []
+  },
+  {
+    "name": "mysql/whitespace only",
+    "dialect": "mysql",
+    "input": "  \n\t \r\n",
+    "statements": []
+  },
+  {
+    "name": "mysql/comments only",
+    "dialect": "mysql",
+    "input": "-- a\n/* b */\n# c\n",
+    "statements": []
+  },
+  {
+    "name": "mysql/leading comment stripped",
+    "dialect": "mysql",
+    "input": "-- header\nSELECT 1;",
+    "statements": [
+      "SELECT 1"
+    ],
+    "startLines": [
+      2
+    ]
+  },
+  {
+    "name": "mysql/trailing comment stripped",
+    "dialect": "mysql",
+    "input": "SELECT 1 -- tail\n;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/inner block comment kept",
+    "dialect": "mysql",
+    "input": "SELECT /* x; */ 1;",
+    "statements": [
+      "SELECT /* x; */ 1"
+    ]
+  },
+  {
+    "name": "mysql/inner line comment kept",
+    "dialect": "mysql",
+    "input": "SELECT 1 -- c;\n, 2;",
+    "statements": [
+      "SELECT 1 -- c;\n, 2"
+    ]
+  },
+  {
+    "name": "mysql/multiple on one line with comments",
+    "dialect": "mysql",
+    "input": "SELECT 1;/*c*/SELECT 2;#x\nSELECT 3",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2",
+      "SELECT 3"
+    ],
+    "startLines": [
+      1,
+      1,
+      2
+    ]
+  },
+  {
+    "name": "mysql/crlf line endings",
+    "dialect": "mysql",
+    "input": "SELECT 1;\r\nSELECT 2;\r\n",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ],
+    "startLines": [
+      1,
+      2
+    ]
+  },
+  {
+    "name": "mysql/start line after multi-line string",
+    "dialect": "mysql",
+    "input": "SELECT 'a\nb';\n\nSELECT 2;",
+    "statements": [
+      "SELECT 'a\nb'",
+      "SELECT 2"
+    ],
+    "startLines": [
+      1,
+      4
+    ]
+  },
+  {
+    "name": "mysql/utf8 bom",
+    "dialect": "mysql",
+    "input": "﻿SELECT 1;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/unicode",
+    "dialect": "mysql",
+    "input": "SELECT '中文;😀'; SELECT `列;名`;",
+    "statements": [
+      "SELECT '中文;😀'",
+      "SELECT `列;名`"
+    ]
+  },
+  {
+    "name": "mysql/single quote with delimiter",
+    "dialect": "mysql",
+    "input": "SELECT 'a;b';",
+    "statements": [
+      "SELECT 'a;b'"
+    ]
+  },
+  {
+    "name": "mysql/backslash escaped quote",
+    "dialect": "mysql",
+    "input": "SELECT 'it\\'s; ok'; SELECT 2;",
+    "statements": [
+      "SELECT 'it\\'s; ok'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/doubled single quote",
+    "dialect": "mysql",
+    "input": "SELECT 'it''s; ok'; SELECT 2",
+    "statements": [
+      "SELECT 'it''s; ok'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/escaped backslash before closing quote",
+    "dialect": "mysql",
+    "input": "SELECT 'a\\\\'; SELECT 2;",
+    "statements": [
+      "SELECT 'a\\\\'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/backslash escapes quote so string runs on",
+    "dialect": "mysql",
+    "input": "SELECT 'a\\'; SELECT 2;",
+    "statements": [
+      "SELECT 'a\\'; SELECT 2;"
+    ]
+  },
+  {
+    "name": "mysql/no_backslash_escapes",
+    "dialect": "mysql",
+    "noBackslashEscapes": true,
+    "input": "SELECT 'a\\'; SELECT 2;",
+    "statements": [
+      "SELECT 'a\\'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/no_backslash_escapes doubled quote",
+    "dialect": "mysql",
+    "noBackslashEscapes": true,
+    "input": "SELECT 'a\\''b'; SELECT 2",
+    "statements": [
+      "SELECT 'a\\''b'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/double quoted string with escape",
+    "dialect": "mysql",
+    "input": "SELECT \"a;\\\"b\"; SELECT 2",
+    "statements": [
+      "SELECT \"a;\\\"b\"",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/double quoted doubled",
+    "dialect": "mysql",
+    "input": "SELECT \"a\"\";b\"; SELECT 2",
+    "statements": [
+      "SELECT \"a\"\";b\"",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/double quoted escaped backslash",
+    "dialect": "mysql",
+    "input": "SELECT \"a\\\\\"; SELECT 2",
+    "statements": [
+      "SELECT \"a\\\\\"",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/backtick identifier",
+    "dialect": "mysql",
+    "input": "SELECT `a;b` FROM `t``;x`; SELECT 2",
+    "statements": [
+      "SELECT `a;b` FROM `t``;x`",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/backslash is not escape in backtick",
+    "dialect": "mysql",
+    "input": "SELECT `a\\`; SELECT 2",
+    "statements": [
+      "SELECT `a\\`",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/escape sequences in values",
+    "dialect": "mysql",
+    "input": "INSERT INTO t VALUES ('a\\nb\\\\', 'c\\0\\Z', \"\\\"\");",
+    "statements": [
+      "INSERT INTO t VALUES ('a\\nb\\\\', 'c\\0\\Z', \"\\\"\")"
+    ]
+  },
+  {
+    "name": "mysql/comment markers inside strings",
+    "dialect": "mysql",
+    "input": "SELECT '-- not', '# not', '/* not */', \"--\";",
+    "statements": [
+      "SELECT '-- not', '# not', '/* not */', \"--\""
+    ]
+  },
+  {
+    "name": "mysql/hex and bit literals",
+    "dialect": "mysql",
+    "input": "INSERT INTO t VALUES (X'3B', 0x3B, b'01', _utf8mb4'x;y');",
+    "statements": [
+      "INSERT INTO t VALUES (X'3B', 0x3B, b'01', _utf8mb4'x;y')"
+    ]
+  },
+  {
+    "name": "mysql/quoted user variables",
+    "dialect": "mysql",
+    "input": "SET @`a;b` = 1; SELECT @'c;d', @\"e;f\";",
+    "statements": [
+      "SET @`a;b` = 1",
+      "SELECT @'c;d', @\"e;f\""
+    ]
+  },
+  {
+    "name": "mysql/unterminated string runs to end",
+    "dialect": "mysql",
+    "input": "SELECT 'abc; SELECT 2;",
+    "statements": [
+      "SELECT 'abc; SELECT 2;"
+    ]
+  },
+  {
+    "name": "mysql/unterminated backtick runs to end",
+    "dialect": "mysql",
+    "input": "SELECT `abc; SELECT 2;",
+    "statements": [
+      "SELECT `abc; SELECT 2;"
+    ]
+  },
+  {
+    "name": "mysql/extended insert",
+    "dialect": "mysql",
+    "input": "INSERT INTO `t` (`a`, `b`) VALUES (1, 'x;'), (2, 'y\\';'), (3, NULL);\nSELECT 1;",
+    "statements": [
+      "INSERT INTO `t` (`a`, `b`) VALUES (1, 'x;'), (2, 'y\\';'), (3, NULL)",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/hash comment",
+    "dialect": "mysql",
+    "input": "SELECT 1 # c;\n, 2;",
+    "statements": [
+      "SELECT 1 # c;\n, 2"
+    ]
+  },
+  {
+    "name": "mysql/hash comment at end without newline",
+    "dialect": "mysql",
+    "input": "SELECT 1; # done",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/hash comment with quote",
+    "dialect": "mysql",
+    "input": "# it's\nSELECT 1;",
+    "statements": [
+      "SELECT 1"
+    ],
+    "startLines": [
+      2
+    ]
+  },
+  {
+    "name": "mysql/dash dash needs whitespace",
+    "dialect": "mysql",
+    "input": "SELECT 1--1;\nSELECT 2;",
+    "statements": [
+      "SELECT 1--1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/dash dash with tab",
+    "dialect": "mysql",
+    "input": "SELECT 1 --\tc;\n;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/dash dash at end of input",
+    "dialect": "mysql",
+    "input": "SELECT 1; --",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/dash dash followed by newline",
+    "dialect": "mysql",
+    "input": "SELECT 1 --\n, 2;",
+    "statements": [
+      "SELECT 1 --\n, 2"
+    ]
+  },
+  {
+    "name": "mysql/dash dash followed by carriage return",
+    "dialect": "mysql",
+    "input": "SELECT 1 --\r\n;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/comment with quote does not open string",
+    "dialect": "mysql",
+    "input": "-- it's\nSELECT 1; /* don't */ SELECT 2;",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/unterminated block comment after statement",
+    "dialect": "mysql",
+    "input": "SELECT 1; /* open",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/unterminated block comment inside statement",
+    "dialect": "mysql",
+    "input": "SELECT 1 /* open; SELECT 2;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/stray comment end is text",
+    "dialect": "mysql",
+    "input": "SELECT 2 */ 3;",
+    "statements": [
+      "SELECT 2 */ 3"
+    ]
+  },
+  {
+    "name": "mysql/optimizer hint",
+    "dialect": "mysql",
+    "input": "SELECT /*+ MAX_EXECUTION_TIME(1000) */ * FROM t;",
+    "statements": [
+      "SELECT /*+ MAX_EXECUTION_TIME(1000) */ * FROM t"
+    ]
+  },
+  {
+    "name": "mysql/conditional comment statement",
+    "dialect": "mysql",
+    "input": "/*!40101 SET NAMES utf8 */;\nSELECT 1;",
+    "statements": [
+      "/*!40101 SET NAMES utf8 */",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/conditional comment without version",
+    "dialect": "mysql",
+    "input": "/*! SET @a = 1 */;",
+    "statements": [
+      "/*! SET @a = 1 */"
+    ]
+  },
+  {
+    "name": "mysql/conditional comment keeps inner semicolons",
+    "dialect": "mysql",
+    "input": "/*!50003 SET @a = 1; SET @b = 2 */;",
+    "statements": [
+      "/*!50003 SET @a = 1; SET @b = 2 */"
+    ]
+  },
+  {
+    "name": "mysql/conditional comment string containing end marker",
+    "dialect": "mysql",
+    "input": "/*!40101 SET @x = '*/;' */; SELECT 1;",
+    "statements": [
+      "/*!40101 SET @x = '*/;' */",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/conditional comment inside statement",
+    "dialect": "mysql",
+    "input": "CREATE TABLE t (a int) /*!50100 PARTITION BY HASH (a) PARTITIONS 2 */;",
+    "statements": [
+      "CREATE TABLE t (a int) /*!50100 PARTITION BY HASH (a) PARTITIONS 2 */"
+    ]
+  },
+  {
+    "name": "mysql/mariadb conditional comment",
+    "dialect": "mysql",
+    "input": "/*M!100100 SET @x = 1 */;\nSELECT 1;",
+    "statements": [
+      "/*M!100100 SET @x = 1 */",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/mariadb sandbox line joins next statement",
+    "dialect": "mysql",
+    "input": "/*M!999999\\- enable the sandbox mode */ \n-- MariaDB dump 10.19\n/*!40101 SET NAMES utf8mb4 */;",
+    "statements": [
+      "/*M!999999\\- enable the sandbox mode */ \n-- MariaDB dump 10.19\n/*!40101 SET NAMES utf8mb4 */"
+    ]
+  },
+  {
+    "name": "mysql/regular comment nested in conditional comment",
+    "dialect": "mysql",
+    "input": "/*!50003 CREATE /* inner; */ TABLE t (a int) */;",
+    "statements": [
+      "/*!50003 CREATE /* inner; */ TABLE t (a int) */"
+    ]
+  },
+  {
+    "name": "mysql/line comment with quote inside conditional comment",
+    "dialect": "mysql",
+    "input": "/*!50003 TRIGGER x BEGIN\n-- don't\nSET @a = 1; END */;\nSELECT 2;",
+    "statements": [
+      "/*!50003 TRIGGER x BEGIN\n-- don't\nSET @a = 1; END */",
+      "SELECT 2"
+    ],
+    "startLines": [
+      1,
+      4
+    ]
+  },
+  {
+    "name": "mysql/unterminated conditional comment",
+    "dialect": "mysql",
+    "input": "SELECT 1; /*!40101 SET x = 1;",
+    "statements": [
+      "SELECT 1",
+      "/*!40101 SET x = 1;"
+    ]
+  },
+  {
+    "name": "mysql/mysqldump header",
+    "dialect": "mysql",
+    "input": "-- MySQL dump 10.13  Distrib 8.0.36, for Linux (x86_64)\n--\n-- Host: 127.0.0.1    Database: app\n\n/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;\n/*!50503 SET NAMES utf8mb4 */;\n/*!40103 SET TIME_ZONE='+00:00' */;\nLOCK TABLES `t` WRITE;\n/*!40000 ALTER TABLE `t` DISABLE KEYS */;\nINSERT INTO `t` VALUES (1,'a;b');\n/*!40000 ALTER TABLE `t` ENABLE KEYS */;\nUNLOCK TABLES;\n-- Dump completed on 2026-11-26 12:00:00\n",
+    "statements": [
+      "/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */",
+      "/*!50503 SET NAMES utf8mb4 */",
+      "/*!40103 SET TIME_ZONE='+00:00' */",
+      "LOCK TABLES `t` WRITE",
+      "/*!40000 ALTER TABLE `t` DISABLE KEYS */",
+      "INSERT INTO `t` VALUES (1,'a;b')",
+      "/*!40000 ALTER TABLE `t` ENABLE KEYS */",
+      "UNLOCK TABLES"
+    ],
+    "startLines": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ]
+  },
+  {
+    "name": "mysql/delimiter basic",
+    "dialect": "mysql",
+    "input": "DELIMITER ;;\nCREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END;;\nDELIMITER ;\nCALL p();",
+    "statements": [
+      "CREATE PROCEDURE p() BEGIN SELECT 1; SELECT 2; END",
+      "CALL p()"
+    ],
+    "startLines": [
+      2,
+      4
+    ]
+  },
+  {
+    "name": "mysql/navicat lowercase delimiter",
+    "dialect": "mysql",
+    "input": "delimiter ;;\nCREATE TRIGGER `t` BEFORE INSERT ON `x` FOR EACH ROW BEGIN\n  SET NEW.a = 1;\nEND\n;;\ndelimiter ;\nSELECT 1;",
+    "statements": [
+      "CREATE TRIGGER `t` BEFORE INSERT ON `x` FOR EACH ROW BEGIN\n  SET NEW.a = 1;\nEND",
+      "SELECT 1"
+    ],
+    "startLines": [
+      2,
+      7
+    ]
+  },
+  {
+    "name": "mysql/delimiter mixed case",
+    "dialect": "mysql",
+    "input": "DeLiMiTeR ;;\nSELECT 1;;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/delimiter dollar",
+    "dialect": "mysql",
+    "input": "DELIMITER $$\nCREATE FUNCTION f() RETURNS INT RETURN 1$$\nDELIMITER ;\nSELECT f();",
+    "statements": [
+      "CREATE FUNCTION f() RETURNS INT RETURN 1",
+      "SELECT f()"
+    ]
+  },
+  {
+    "name": "mysql/delimiter dollar inside identifier",
+    "dialect": "mysql",
+    "input": "DELIMITER $$\nSELECT a$b FROM t$$",
+    "statements": [
+      "SELECT a$b FROM t"
+    ]
+  },
+  {
+    "name": "mysql/delimiter slashes",
+    "dialect": "mysql",
+    "input": "DELIMITER //\nSELECT 1 // SELECT 2//\nDELIMITER ;",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/delimiter not at statement start is text",
+    "dialect": "mysql",
+    "input": "SELECT 1,\ndelimiter FROM t;",
+    "statements": [
+      "SELECT 1,\ndelimiter FROM t"
+    ]
+  },
+  {
+    "name": "mysql/delimiter without argument is text",
+    "dialect": "mysql",
+    "input": "DELIMITER\nSELECT 1;",
+    "statements": [
+      "DELIMITER\nSELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/delimiter after statement on same line",
+    "dialect": "mysql",
+    "input": "SELECT 1; DELIMITER ;;\nSELECT 2;;",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/delimiter after comments",
+    "dialect": "mysql",
+    "input": "-- c\n/* d */ DELIMITER //\nSELECT 1//",
+    "statements": [
+      "SELECT 1"
+    ],
+    "startLines": [
+      3
+    ]
+  },
+  {
+    "name": "mysql/delimiter quoted argument",
+    "dialect": "mysql",
+    "input": "DELIMITER '$$'\nSELECT 1$$",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/delimiter ignores rest of line",
+    "dialect": "mysql",
+    "input": "DELIMITER ;; extra stuff\nSELECT 1;;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "mysql/delimiter with crlf",
+    "dialect": "mysql",
+    "input": "DELIMITER ;;\r\nSELECT 1;;\r\nDELIMITER ;\r\nSELECT 2;",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ],
+    "startLines": [
+      2,
+      4
+    ]
+  },
+  {
+    "name": "mysql/single semicolon is text under double delimiter",
+    "dialect": "mysql",
+    "input": "DELIMITER ;;\nSELECT 1; SELECT 2;;",
+    "statements": [
+      "SELECT 1; SELECT 2"
+    ]
+  },
+  {
+    "name": "mysql/delimiter inside string",
+    "dialect": "mysql",
+    "input": "DELIMITER $$\nSELECT '$$'$$",
+    "statements": [
+      "SELECT '$$'"
+    ]
+  },
+  {
+    "name": "mysql/delimiter line inside pending statement is text",
+    "dialect": "mysql",
+    "input": "DELIMITER ;;\nSELECT 1;\nDELIMITER ;\nSELECT 2;",
+    "statements": [
+      "SELECT 1;\nDELIMITER ;\nSELECT 2;"
+    ]
+  },
+  {
+    "name": "mysql/begin end without delimiter is split like mysql client",
+    "dialect": "mysql",
+    "input": "CREATE PROCEDURE p() BEGIN SELECT 1; END;",
+    "statements": [
+      "CREATE PROCEDURE p() BEGIN SELECT 1",
+      "END"
+    ]
+  },
+  {
+    "name": "mysql/mysqldump trigger",
+    "dialect": "mysql",
+    "input": "DELIMITER ;;\n/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `trg` BEFORE INSERT ON `t` FOR EACH ROW BEGIN\n  SET NEW.a = 1;\nEND */;;\nDELIMITER ;\n",
+    "statements": [
+      "/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `trg` BEFORE INSERT ON `t` FOR EACH ROW BEGIN\n  SET NEW.a = 1;\nEND */"
+    ]
+  },
+  {
+    "name": "mysql/mysqldump routine with sql_mode",
+    "dialect": "mysql",
+    "input": "/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;\n/*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES' */ ;\nDELIMITER ;;\nCREATE DEFINER=`root`@`%` PROCEDURE `p`()\nBEGIN\n  SELECT 'a;b';\nEND ;;\nDELIMITER ;\n/*!50003 SET sql_mode              = @saved_sql_mode */ ;",
+    "statements": [
+      "/*!50003 SET @saved_sql_mode       = @@sql_mode */",
+      "/*!50003 SET sql_mode              = 'STRICT_TRANS_TABLES' */",
+      "CREATE DEFINER=`root`@`%` PROCEDURE `p`()\nBEGIN\n  SELECT 'a;b';\nEND",
+      "/*!50003 SET sql_mode              = @saved_sql_mode */"
+    ]
+  },
+  {
+    "name": "mysql/navicat file",
+    "dialect": "mysql",
+    "input": "/*\n Navicat Premium Dump SQL\n\n Source Server Type    : MySQL\n*/\n\nSET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS = 0;\n\n-- ----------------------------\n-- Table structure for t\n-- ----------------------------\nDROP TABLE IF EXISTS `t`;\nCREATE TABLE `t`  (\n  `id` int NOT NULL\n) ENGINE = InnoDB;\n\n-- ----------------------------\n-- Records of t\n-- ----------------------------\nBEGIN;\nINSERT INTO `t` (`id`) VALUES (1);\nCOMMIT;\n\n-- ----------------------------\n-- Procedure structure for p\n-- ----------------------------\nDROP PROCEDURE IF EXISTS `p`;\ndelimiter ;;\nCREATE PROCEDURE `p`()\nBEGIN\n  SELECT 1;\nEND\n;;\ndelimiter ;\n\nSET FOREIGN_KEY_CHECKS = 1;\n",
+    "statements": [
+      "SET NAMES utf8mb4",
+      "SET FOREIGN_KEY_CHECKS = 0",
+      "DROP TABLE IF EXISTS `t`",
+      "CREATE TABLE `t`  (\n  `id` int NOT NULL\n) ENGINE = InnoDB",
+      "BEGIN",
+      "INSERT INTO `t` (`id`) VALUES (1)",
+      "COMMIT",
+      "DROP PROCEDURE IF EXISTS `p`",
+      "CREATE PROCEDURE `p`()\nBEGIN\n  SELECT 1;\nEND",
+      "SET FOREIGN_KEY_CHECKS = 1"
+    ],
+    "startLines": [
+      7,
+      8,
+      13,
+      14,
+      21,
+      22,
+      23,
+      28,
+      30,
+      37
+    ]
+  },
+  {
+    "name": "mysql/brackets are not quotes",
+    "dialect": "mysql",
+    "input": "SELECT [a;b];",
+    "statements": [
+      "SELECT [a",
+      "b]"
+    ]
+  },
+  {
+    "name": "sqlite/basic",
+    "dialect": "sqlite",
+    "input": "SELECT 1; SELECT 2;",
+    "statements": [
+      "SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/empty and comments",
+    "dialect": "sqlite",
+    "input": ";; -- x\n/* y */ ;",
+    "statements": []
+  },
+  {
+    "name": "sqlite/dash dash without space is comment",
+    "dialect": "sqlite",
+    "input": "SELECT 1--1;\nSELECT 2;",
+    "statements": [
+      "SELECT 1--1;\nSELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/hash is not a comment",
+    "dialect": "sqlite",
+    "input": "SELECT '#'; SELECT 1 # x;",
+    "statements": [
+      "SELECT '#'",
+      "SELECT 1 # x"
+    ]
+  },
+  {
+    "name": "sqlite/conditional comment is plain comment",
+    "dialect": "sqlite",
+    "input": "/*! not code */ SELECT 1;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "sqlite/backslash is not an escape",
+    "dialect": "sqlite",
+    "input": "SELECT 'a\\'; SELECT 2;",
+    "statements": [
+      "SELECT 'a\\'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/doubled quote",
+    "dialect": "sqlite",
+    "input": "SELECT 'it''s;'; SELECT 2",
+    "statements": [
+      "SELECT 'it''s;'",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/double quoted identifier",
+    "dialect": "sqlite",
+    "input": "SELECT \"a\"\";b\" FROM t;",
+    "statements": [
+      "SELECT \"a\"\";b\" FROM t"
+    ]
+  },
+  {
+    "name": "sqlite/bracket identifier",
+    "dialect": "sqlite",
+    "input": "SELECT [a;b] FROM [t];",
+    "statements": [
+      "SELECT [a;b] FROM [t]"
+    ]
+  },
+  {
+    "name": "sqlite/backtick identifier",
+    "dialect": "sqlite",
+    "input": "SELECT `a;b` FROM t;",
+    "statements": [
+      "SELECT `a;b` FROM t"
+    ]
+  },
+  {
+    "name": "sqlite/delimiter is not a directive",
+    "dialect": "sqlite",
+    "input": "DELIMITER ;;\nSELECT 1;",
+    "statements": [
+      "DELIMITER",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "sqlite/trigger",
+    "dialect": "sqlite",
+    "input": "CREATE TRIGGER tr AFTER INSERT ON t BEGIN\n  UPDATE x SET a = 1;\n  DELETE FROM y;\nEND;\nSELECT 1;",
+    "statements": [
+      "CREATE TRIGGER tr AFTER INSERT ON t BEGIN\n  UPDATE x SET a = 1;\n  DELETE FROM y;\nEND",
+      "SELECT 1"
+    ],
+    "startLines": [
+      1,
+      5
+    ]
+  },
+  {
+    "name": "sqlite/temp trigger",
+    "dialect": "sqlite",
+    "input": "CREATE TEMP TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END; SELECT 2;",
+    "statements": [
+      "CREATE TEMP TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/temporary trigger lowercase if not exists",
+    "dialect": "sqlite",
+    "input": "create temporary trigger if not exists tr before delete on t begin select 1; select 2; end; select 3;",
+    "statements": [
+      "create temporary trigger if not exists tr before delete on t begin select 1; select 2; end",
+      "select 3"
+    ]
+  },
+  {
+    "name": "sqlite/trigger with case end",
+    "dialect": "sqlite",
+    "input": "CREATE TRIGGER tr AFTER UPDATE ON t BEGIN UPDATE x SET a = CASE WHEN new.a > 0 THEN 1 ELSE 0 END; END; SELECT 1;",
+    "statements": [
+      "CREATE TRIGGER tr AFTER UPDATE ON t BEGIN UPDATE x SET a = CASE WHEN new.a > 0 THEN 1 ELSE 0 END; END",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "sqlite/trigger with comments before end",
+    "dialect": "sqlite",
+    "input": "CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; -- c\n /* d */ END; SELECT 2;",
+    "statements": [
+      "CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; -- c\n /* d */ END",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/trigger with string containing end",
+    "dialect": "sqlite",
+    "input": "CREATE TRIGGER tr AFTER INSERT ON t BEGIN INSERT INTO log VALUES ('; END;'); END; SELECT 1;",
+    "statements": [
+      "CREATE TRIGGER tr AFTER INSERT ON t BEGIN INSERT INTO log VALUES ('; END;'); END",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "sqlite/trigger named end",
+    "dialect": "sqlite",
+    "input": "CREATE TRIGGER \"end\" AFTER INSERT ON t BEGIN SELECT 1; END; SELECT 2;",
+    "statements": [
+      "CREATE TRIGGER \"end\" AFTER INSERT ON t BEGIN SELECT 1; END",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/instead of trigger on view",
+    "dialect": "sqlite",
+    "input": "CREATE VIEW v AS SELECT 1; CREATE TRIGGER tr INSTEAD OF INSERT ON v BEGIN SELECT 2; END;",
+    "statements": [
+      "CREATE VIEW v AS SELECT 1",
+      "CREATE TRIGGER tr INSTEAD OF INSERT ON v BEGIN SELECT 2; END"
+    ]
+  },
+  {
+    "name": "sqlite/table named like trigger keyword",
+    "dialect": "sqlite",
+    "input": "CREATE TABLE trigger_log (a); SELECT 1;",
+    "statements": [
+      "CREATE TABLE trigger_log (a)",
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "sqlite/unterminated trigger",
+    "dialect": "sqlite",
+    "input": "CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1;",
+    "statements": [
+      "CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1;"
+    ]
+  },
+  {
+    "name": "sqlite/transaction statements",
+    "dialect": "sqlite",
+    "input": "BEGIN; INSERT INTO t VALUES (1); COMMIT; END;",
+    "statements": [
+      "BEGIN",
+      "INSERT INTO t VALUES (1)",
+      "COMMIT",
+      "END"
+    ]
+  },
+  {
+    "name": "sqlite/explain",
+    "dialect": "sqlite",
+    "input": "EXPLAIN QUERY PLAN SELECT 1; SELECT 2;",
+    "statements": [
+      "EXPLAIN QUERY PLAN SELECT 1",
+      "SELECT 2"
+    ]
+  },
+  {
+    "name": "sqlite/blob literal",
+    "dialect": "sqlite",
+    "input": "INSERT INTO t VALUES (X'3B00', 1.5e10, -0.0);",
+    "statements": [
+      "INSERT INTO t VALUES (X'3B00', 1.5e10, -0.0)"
+    ]
+  },
+  {
+    "name": "sqlite/unterminated block comment",
+    "dialect": "sqlite",
+    "input": "SELECT 1; /* open; SELECT 2;",
+    "statements": [
+      "SELECT 1"
+    ]
+  },
+  {
+    "name": "sqlite/navicat file",
+    "dialect": "sqlite",
+    "input": "/*\n Navicat Premium Dump SQL\n\n Source Server Type    : SQLite\n*/\n\nPRAGMA foreign_keys = false;\n\n-- ----------------------------\n-- Table structure for t\n-- ----------------------------\nDROP TABLE IF EXISTS \"t\";\nCREATE TABLE \"t\" (\n  \"id\" INTEGER PRIMARY KEY AUTOINCREMENT,\n  \"v\" TEXT\n);\n\n-- ----------------------------\n-- Records of t\n-- ----------------------------\nBEGIN;\nINSERT INTO \"t\" (\"id\", \"v\") VALUES (1, 'a;b');\nCOMMIT;\n\n-- ----------------------------\n-- Auto increment value for t\n-- ----------------------------\nUPDATE \"sqlite_sequence\" SET seq = 1 WHERE name = 't';\n\n-- ----------------------------\n-- Triggers structure for table t\n-- ----------------------------\nCREATE TRIGGER \"tr\" AFTER INSERT ON \"t\" BEGIN SELECT 1; END;\n\nPRAGMA foreign_keys = true;\n",
+    "statements": [
+      "PRAGMA foreign_keys = false",
+      "DROP TABLE IF EXISTS \"t\"",
+      "CREATE TABLE \"t\" (\n  \"id\" INTEGER PRIMARY KEY AUTOINCREMENT,\n  \"v\" TEXT\n)",
+      "BEGIN",
+      "INSERT INTO \"t\" (\"id\", \"v\") VALUES (1, 'a;b')",
+      "COMMIT",
+      "UPDATE \"sqlite_sequence\" SET seq = 1 WHERE name = 't'",
+      "CREATE TRIGGER \"tr\" AFTER INSERT ON \"t\" BEGIN SELECT 1; END",
+      "PRAGMA foreign_keys = true"
+    ],
+    "startLines": [
+      7,
+      12,
+      13,
+      21,
+      22,
+      23,
+      28,
+      33,
+      35
+    ]
+  },
+  {
+    "name": "sqlite/utf8 bom and unicode",
+    "dialect": "sqlite",
+    "input": "﻿SELECT '中文;😀'; SELECT \"列;名\";",
+    "statements": [
+      "SELECT '中文;😀'",
+      "SELECT \"列;名\""
+    ]
+  },
+  {
+    "name": "sqlite/unterminated string",
+    "dialect": "sqlite",
+    "input": "SELECT 'abc; SELECT 2;",
+    "statements": [
+      "SELECT 'abc; SELECT 2;"
+    ]
+  }
+]
