@@ -20,6 +20,10 @@ import { confirmDialog } from '@/lib/confirm'
 import { registerTabState, unregisterTabState } from '@/stores/tabstate'
 import { errorText, i18n } from '@/i18n'
 import { plainText } from '@/modules/grid/model'
+import { openExport, openImport } from '@/modules/dataio/open'
+import { openDesigner } from '@/modules/designer'
+import { openDDL } from '@/modules/ddl'
+import { hasCap } from '@/lib/dialect'
 
 const props = defineProps<{ tab: Tab; active: boolean }>()
 const conns = useConns()
@@ -176,6 +180,7 @@ onMounted(() => {
   }), {
     // 智能体修改当前视图：更新条件后重新加载，等加载完成
     update: async (p: { where?: string; order_by?: string; scroll_to_row?: number }) => {
+      if (changes.value > 0) throw new Error(t('table.pendingBlocked', { n: changes.value }))
       if (p.where !== undefined) where.value = p.where
       if (p.order_by !== undefined) { orderBy.value = p.order_by; sort.value = null }
       await load({ force: true })
@@ -220,6 +225,10 @@ function onFilterKey(e: KeyboardEvent) {
       <span class="lm-spacer" />
       <span v-if="conn?.env === 'prod'" class="lm-badge danger">{{ $t('explorer.env.prod') }}</span>
       <span v-if="result && !editable" class="lm-badge" :title="result.editable?.reason">{{ $t('table.readOnly') }}</span>
+      <IconBtn icon="download" :label="$t('table.export')" :size="16" @click="conn && openExport({ conn, database: db, table, where, orderBy: effectiveOrder })" />
+      <IconBtn v-if="conn && info?.kind !== 'view' && !conn.read_only && conn.access !== 'read'" icon="upload" :label="$t('table.import')" :size="16" @click="conn && openImport({ conn, database: db, table }).then(() => load({ force: true }))" />
+      <IconBtn v-if="conn && hasCap(conn, 'ddl') && info?.kind !== 'view'" icon="columns" :label="$t('table.design')" :size="16" @click="conn && openDesigner(conn, db, table)" />
+      <IconBtn icon="code" :label="$t('table.ddl')" :size="16" @click="conn && openDDL(conn, db, info?.kind === 'view' ? 'view' : 'table', table)" />
       <IconBtn icon="terminal" :label="$t('table.openConsole')" :size="16" @click="conn && openers.console(tabs, conn, db, { sql: `SELECT * FROM ${quoteIdent(table, dialect)}${where ? ' WHERE ' + where : ''};` })" />
     </div>
     <div v-show="showFilters" class="filters">

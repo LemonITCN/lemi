@@ -23,6 +23,8 @@ import { confirmDialog } from '@/lib/confirm'
 import { registerTabState, unregisterTabState } from '@/stores/tabstate'
 import { errorText, i18n } from '@/i18n'
 import { plainText } from '@/modules/grid/model'
+import ExplainTree from '@/components/code/ExplainTree.vue'
+import { openExport } from '@/modules/dataio/open'
 
 const props = defineProps<{ tab: Tab; active: boolean }>()
 const conns = useConns()
@@ -219,7 +221,7 @@ onMounted(async () => {
   }
   registerTabState(props.tab.id, () => ({
     kind: 'console', tab_id: props.tab.id, connection_id: conn.value?.id, db: database.value, sql: view?.state.doc.toString() || '', in_tx: inTx.value,
-    results: results.value.map((r) => ({ kind: r.kind, statement: r.statement, columns: r.columns?.map((c) => c.name), rows_loaded: r.rows?.length || 0, affected: r.affected, error: r.error,
+    results: results.value.map((r) => ({ kind: r.kind, statement: r.statement, columns: r.columns?.map((c) => c.name), rows_loaded: r.rows?.length || 0, affected: r.affected, error: r.error, duration_ms: r.duration_ms,
       sample: (r.rows || []).slice(0, 20).map((row) => row.map((v) => plainText(v, 'NULL'))) })),
     selection: gridRef.value?.selection(),
   }), {
@@ -253,12 +255,6 @@ function startSplit(e: PointerEvent) {
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
 }
-const explainText = computed(() => {
-  const ex = explain.value
-  if (!ex || ex.format !== 'json') return ''
-  const cell = ex.result.rows?.[0]?.[0]
-  try { return JSON.stringify(JSON.parse(plainText(cell)), null, 2) } catch { return plainText(cell) }
-})
 </script>
 
 <template>
@@ -298,10 +294,7 @@ const explainText = computed(() => {
           </button>
         </div>
         <div class="rbody">
-          <template v-if="explain">
-            <pre v-if="explain.format === 'json'" class="msg mono">{{ explainText }}</pre>
-            <DataGrid v-else :columns="explain.result.columns || []" :rows="explain.result.rows || []" :dialect="dialect" />
-          </template>
+          <ExplainTree v-if="explain" :format="explain.format" :result="explain.result" />
           <template v-else-if="cur">
             <DataGrid v-if="cur.kind === 'rows'" ref="gridRef" :key="activeResult + ':' + cur.statement" :columns="cur.columns || []" :rows="cur.rows || []"
               :editable="!!cur.editable?.ok" :dialect="dialect" :table="cur.editable?.table" :key-cols="cur.editable?.key || []"
@@ -323,6 +316,7 @@ const explainText = computed(() => {
           <span>· {{ cur.duration_ms }} ms</span>
           <span v-if="cur.kind === 'rows' && !cur.editable?.ok && cur.editable?.reason" class="lm-faint lm-ellipsis">· {{ cur.editable.reason }}</span>
           <span class="lm-spacer" />
+          <IconBtn v-if="cur.kind === 'rows' && conn" icon="download" :label="$t('table.export')" :size="15" @click="openExport({ conn: conn!, database, sql: cur.statement })" />
           <Btn v-if="changes" size="sm" variant="primary" icon="check" @click="submitResult">{{ $t('table.submit') }} {{ changes }}</Btn>
         </div>
       </div>

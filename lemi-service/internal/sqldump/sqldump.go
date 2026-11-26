@@ -149,23 +149,25 @@ type ImportProgress struct {
 
 // StmtError 是一条语句的错误。Index 从 1 开始。
 type StmtError struct {
-	Index   int64
-	Line    int
-	Snippet string
-	Error   string
+	Index   int64  `json:"index"`
+	Line    int    `json:"line"`
+	Snippet string `json:"snippet"`
+	Error   string `json:"error"`
 }
 
 // ImportResult 是导入结果。
 type ImportResult struct {
-	Statements, Errors int64
-	ErrorList          []StmtError // 最多 100 条
-	Bytes              int64
+	Statements int64       `json:"statements"`
+	Errors     int64       `json:"errors"`
+	ErrorList  []StmtError `json:"error_list"` // 最多 100 条
+	Bytes      int64       `json:"bytes"`
 	// LemiDump 文件带 Lemi 注释头；Complete 文件完整（Lemi 与 mysqldump 文件看到了结束标记；其他文件读到末尾即为真）。
-	LemiDump, Complete bool
+	LemiDump bool `json:"lemi_dump"`
+	Complete bool `json:"complete"`
 	// Format 识别出的文件来源：lemi / navicat / mysqldump / unknown。
-	Format string
+	Format string `json:"format"`
 	// Skipped 跳过的语句数（例如 Navicat SQLite 文件里重建 sqlite_sequence 的语句）。
-	Skipped int64
+	Skipped int64 `json:"skipped"`
 }
 
 const maxErrorList = 100
@@ -271,7 +273,7 @@ func (o *out) header(h headerInfo) {
 	o.str(" Target Server Type    : " + h.serverType + "\n")
 	o.str(" Target Server Version : " + h.versionNum + " (" + commentSafe(h.versionText) + ")\n")
 	o.str(" File Encoding         : 65001\n\n")
-	o.str(" Date: " + h.now.UTC().Format("02/01/2006 15:04:05") + "\n*/\n\n")
+	o.str(" Date: " + h.now.UTC().Format("02/01/2006 15:04:05") + " UTC\n*/\n\n")
 }
 
 func (o *out) footer(now time.Time) {

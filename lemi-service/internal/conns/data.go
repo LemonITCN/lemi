@@ -406,6 +406,10 @@ func (s *Service) buildChanges(sc driver.SQLConn, t *driver.TableInfo, req *Appl
 				if !ok || isKey(name) || !comparable(ci.Kind, ov) {
 					continue
 				}
+				// SQLite 的日期时间是文本，驱动解析后再格式化可能与原文写法不同（T 分隔、时区后缀），不做旧值比较
+				if sc.Dialect() == "sqlite" && (ci.Kind == "date" || ci.Kind == "datetime") {
+					continue
+				}
 				dv, err := decodeValue(ov)
 				if err != nil || dv == defaultMarker {
 					continue
