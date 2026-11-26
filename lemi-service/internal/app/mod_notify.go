@@ -4,7 +4,11 @@ import (
 	"context"
 
 	"github.com/LemonITCN/lemi/lemi-service/internal/notify"
+	"github.com/LemonITCN/lemi/lemi-service/internal/tasks"
 )
+
+// 通知服务给定时智能体任务发结果通知。
+var _ tasks.TaskNotifier = (*notify.Service)(nil)
 
 // Notify 通知服务。
 func (a *App) Notify() *notify.Service { s, _ := a.Get("notify").(*notify.Service); return s }
