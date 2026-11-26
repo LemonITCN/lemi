@@ -15,3 +15,6 @@ lemi-service/bin/
 *.out
 coverage.*
 .claude/
+# docker-compose 示例里的口令文件与证书（不能提交）
+docker/secrets/
+docker/certs/
