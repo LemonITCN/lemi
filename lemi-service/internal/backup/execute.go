@@ -36,30 +36,30 @@ import (
 
 // BackupManifest 是写在备份文件旁边的 .manifest.json（不加密）。
 type BackupManifest struct {
-	Format           string                `json:"format"` // lemi-backup-manifest/1
-	BackupID         string                `json:"backup_id"`
-	PlanID           string                `json:"plan_id,omitempty"`
-	WorkspaceID      string                `json:"workspace_id"`
-	ConnectionID     string                `json:"connection_id"`
-	ConnectionName   string                `json:"connection_name"`
-	Driver           string                `json:"driver"`
-	Method           string                `json:"method"`
-	Tool             string                `json:"tool"`
-	ServerProduct    string                `json:"server_product"`
-	ServerVersion    string                `json:"server_version"`
-	Databases        []sqldump.DBManifest  `json:"databases"`
-	File             string                `json:"file"`
-	Compression      string                `json:"compression"`
-	CompressionLevel int                   `json:"compression_level,omitempty"`
-	Encrypted        bool                  `json:"encrypted"`
-	Encryption       string                `json:"encryption,omitempty"`
-	Size             int64                 `json:"size"`
-	RawSize          int64                 `json:"raw_size"`
-	SHA256           string                `json:"sha256"`
-	StartedAt        int64                 `json:"started_at"`
-	FinishedAt       int64                 `json:"finished_at"`
-	Warnings         []string              `json:"warnings,omitempty"`
-	HashAlgorithm    string                `json:"hash_algorithm,omitempty"` // 表内容哈希的算法（自研导出器）
+	Format           string               `json:"format"` // lemi-backup-manifest/1
+	BackupID         string               `json:"backup_id"`
+	PlanID           string               `json:"plan_id,omitempty"`
+	WorkspaceID      string               `json:"workspace_id"`
+	ConnectionID     string               `json:"connection_id"`
+	ConnectionName   string               `json:"connection_name"`
+	Driver           string               `json:"driver"`
+	Method           string               `json:"method"`
+	Tool             string               `json:"tool"`
+	ServerProduct    string               `json:"server_product"`
+	ServerVersion    string               `json:"server_version"`
+	Databases        []sqldump.DBManifest `json:"databases"`
+	File             string               `json:"file"`
+	Compression      string               `json:"compression"`
+	CompressionLevel int                  `json:"compression_level,omitempty"`
+	Encrypted        bool                 `json:"encrypted"`
+	Encryption       string               `json:"encryption,omitempty"`
+	Size             int64                `json:"size"`
+	RawSize          int64                `json:"raw_size"`
+	SHA256           string               `json:"sha256"`
+	StartedAt        int64                `json:"started_at"`
+	FinishedAt       int64                `json:"finished_at"`
+	Warnings         []string             `json:"warnings,omitempty"`
+	HashAlgorithm    string               `json:"hash_algorithm,omitempty"` // 表内容哈希的算法（自研导出器）
 }
 
 // compressExt 压缩扩展名。
@@ -769,4 +769,3 @@ func humanBytes(n int64) string {
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
-

@@ -90,21 +90,21 @@ func runAAD(id string) string  { return crypt.AAD("backup_runs", id, "passphrase
 
 // PlanInput 是创建或修改计划的请求。
 type PlanInput struct {
-	ConnectionID     string        `json:"connection_id"`
-	Name             string        `json:"name"`
-	Enabled          *bool         `json:"enabled"`
-	Method           string        `json:"method"`
-	Databases        []string      `json:"databases"`
-	Compression      string        `json:"compression"`
-	CompressionLevel int           `json:"compression_level"`
-	Encrypt          bool          `json:"encrypt"`
-	Passphrase       string        `json:"passphrase"` // 只写；不传表示保持原值
-	Targets          []string      `json:"targets"`
-	Schedule         sched.Spec    `json:"schedule"`
-	Retention        Retention     `json:"retention"`
-	Verify           VerifyConfig  `json:"verify"`
-	NotifySuccess    []string      `json:"notify_success"`
-	NotifyFailure    []string      `json:"notify_failure"`
+	ConnectionID     string       `json:"connection_id"`
+	Name             string       `json:"name"`
+	Enabled          *bool        `json:"enabled"`
+	Method           string       `json:"method"`
+	Databases        []string     `json:"databases"`
+	Compression      string       `json:"compression"`
+	CompressionLevel int          `json:"compression_level"`
+	Encrypt          bool         `json:"encrypt"`
+	Passphrase       string       `json:"passphrase"` // 只写；不传表示保持原值
+	Targets          []string     `json:"targets"`
+	Schedule         sched.Spec   `json:"schedule"`
+	Retention        Retention    `json:"retention"`
+	Verify           VerifyConfig `json:"verify"`
+	NotifySuccess    []string     `json:"notify_success"`
+	NotifyFailure    []string     `json:"notify_failure"`
 	connection       *conns.Connection
 }
 

@@ -378,4 +378,3 @@ func (s *Service) fileTargetName(ctx context.Context, id string) string {
 	}
 	return id
 }
-

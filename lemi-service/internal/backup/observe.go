@@ -108,7 +108,7 @@ func (o *dumpObserver) flushRows() {
 	o.pend = 0
 }
 
-// backtickName 解析行首某前缀之后的反引号标识符（`` 转义为一个反引号）。
+// backtickName 解析行首某前缀之后的反引号标识符（“ 转义为一个反引号）。
 func backtickName(s string) (string, bool) {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {

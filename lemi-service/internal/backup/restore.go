@@ -182,7 +182,7 @@ func (c *countReader) Read(p []byte) (int, error) {
 
 // ---------------- 库名改写（mysqldump 产物用 mysql 客户端还原到别的库名时） ----------------
 
-// dbRenamer 改写 mysqldump 输出里的 `CREATE DATABASE ... `库``、`USE `库`;` 两种行（只看行首，其余字节原样通过）。
+// dbRenamer 改写 mysqldump 输出里的 `CREATE DATABASE ... `库“、`USE `库`;` 两种行（只看行首，其余字节原样通过）。
 // mysqldump 的值里不会出现裸换行（转义成 \n），所以行首判断是可靠的。
 type dbRenamer struct {
 	br        *bufio.Reader
@@ -669,4 +669,3 @@ func (s *Service) finishRestore(r *Run, rec *RestoreRec, res map[string]any, err
 			Message: fmt.Sprintf("备份 %s 还原到连接「%s」失败：%s", r.FileName, rec.ConnectionName, rec.Error), Link: link})
 	}
 }
-
