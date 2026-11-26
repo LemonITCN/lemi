@@ -1,0 +1,16 @@
+export default {
+  title: 'Reports', new: 'New report', filter: 'Filter reports', empty: 'No reports yet', titleLabel: 'Title',
+  bodyPlaceholder: 'Write in Markdown. Reference a chart with ```lemi-chart <chart ID>``` and a query result with ```lemi-table <result ID>```.',
+  syntaxHint: 'The body is Markdown. Charts, query results and diagrams are embedded with reference blocks: ```lemi-chart ID```, ```lemi-table ID```, ```lemi-diagram ID```, or a plain ```mermaid block. Referenced data is snapshotted on save; reading, sharing and exporting all use that snapshot.',
+  emptyBody: 'The body is empty. Click Edit to start writing.', updatedAt: 'Updated {t}', shared: 'Public', missingN: '{n} missing references',
+  share: 'Share', export: 'Export', exportHTML: 'Single-file HTML', exportPDF: 'PDF (print)', exportMD: 'Markdown',
+  exportFailed: 'Export failed', popupBlocked: 'The browser blocked the print window. Allow pop-ups for this site and try again.',
+  discardTitle: 'Discard changes', discardConfirm: 'You have unsaved changes. Discard them?', discard: 'Discard',
+  deleteTitle: 'Delete report', deleteConfirm: 'Delete report "{name}"? Its public link stops working too. This cannot be undone.',
+  shareTitle: 'Public link', shareDisabled: 'Public report links are disabled by the administrator.', shareActive: 'A public link is active',
+  hasPassword: 'Password protected', expiresAt: 'Expires {t}', noExpiry: 'Never expires', linkOnce: 'The link is shown only here. Regenerating it invalidates the old one immediately.',
+  password: 'Access password', passwordPh: 'Leave empty to let anyone with the link view it', validity: 'Validity',
+  createLink: 'Create link', regenerate: 'Regenerate', revoke: 'Revoke link', revoked: 'Public link revoked',
+  needPassword: 'This report requires a password', open: 'Open',
+  missingChart: 'Chart missing', missingTable: 'Table missing', missingDiagram: 'Diagram missing', firstRows: 'Showing the first {n} rows',
+}

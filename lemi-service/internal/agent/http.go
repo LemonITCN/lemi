@@ -72,6 +72,10 @@ func (s *Service) hModels(srv *web.Server, w http.ResponseWriter, r *http.Reques
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	ms, def, errs := s.WorkspaceModels(ctx, ws)
+	if r.URL.Query().Get("all") == "1" {
+		// 空间设置页：列出全部可用模型（不按空间启用列表过滤）
+		ms, errs = s.AllModels(ctx)
+	}
 	if ms == nil {
 		ms = []ModelInfo{}
 	}

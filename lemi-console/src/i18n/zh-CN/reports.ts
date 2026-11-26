@@ -1,0 +1,16 @@
+export default {
+  title: '报告', new: '新建报告', filter: '筛选报告', empty: '还没有报告', titleLabel: '标题',
+  bodyPlaceholder: '用 Markdown 写正文。引用图表写 ```lemi-chart <图表 ID>```，引用查询结果写 ```lemi-table <结果 ID>```。',
+  syntaxHint: '正文为 Markdown。图表、查询结果和图通过引用块嵌入：```lemi-chart ID```、```lemi-table ID```、```lemi-diagram ID```，也可以直接写 ```mermaid 代码块。保存时会把引用的数据存成快照，之后阅读、分享和导出都用这份快照。',
+  emptyBody: '正文是空的，点「编辑」开始写。', updatedAt: '更新于 {t}', shared: '已公开', missingN: '{n} 个引用缺失',
+  share: '分享', export: '导出', exportHTML: '单文件 HTML', exportPDF: 'PDF（打印）', exportMD: 'Markdown',
+  exportFailed: '导出失败', popupBlocked: '浏览器拦截了打印窗口，请允许本站弹出窗口后重试',
+  discardTitle: '放弃修改', discardConfirm: '有未保存的修改，确定放弃吗？', discard: '放弃',
+  deleteTitle: '删除报告', deleteConfirm: '确定删除报告「{name}」吗？公开链接会一起失效，无法恢复。',
+  shareTitle: '公开链接', shareDisabled: '管理员已关闭报告公开链接。', shareActive: '当前有一个公开链接',
+  hasPassword: '有访问密码', expiresAt: '{t} 到期', noExpiry: '长期有效', linkOnce: '链接只在这里显示一次；重新生成后旧链接立即失效。',
+  password: '访问密码', passwordPh: '留空则任何拿到链接的人都能看', validity: '有效期',
+  createLink: '生成链接', regenerate: '重新生成', revoke: '撤销链接', revoked: '公开链接已撤销',
+  needPassword: '这份报告需要访问密码', open: '打开',
+  missingChart: '图表缺失', missingTable: '表格缺失', missingDiagram: '图缺失', firstRows: '只列出前 {n} 行',
+}
