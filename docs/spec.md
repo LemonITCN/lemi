@@ -634,3 +634,102 @@ internal/
   version     版本
   logx        日志
 ```
+
+## 23. 备份/健康检查/通知接口
+
+全部在 `/api/v1` 下，需要登录（会话 + CSRF，见 §5.2、§18）。权限列：viewer / member / admin 指空间角色（§4.2），「写」「读」指对该连接的有效权限（§4.2 的个人收紧与连接只读都计入）；「实例管理员」指实例级 admin。所有带 `{ws}` 的接口都校验对象确实属于该空间，不属于一律 404；对连接被收紧为 none 的成员，相关计划、记录、还原同样不可见（连接已删除时只有空间 admin 可见）。密钥字段一律只写不读：视图只给 `secrets_set`（已设置的密钥字段名），更新时不传表示保持原值，主机/地址类字段变了必须重新输入（§5.3）。
+
+### 23.1 备份（`/workspaces/{ws}/backups`）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/kinds` | viewer | 存储目标类型与表单字段 `{kinds:[{id,name,name_en,fields:[{key,label,label_en,type,required,secret,default,placeholder,help,options}],admin_only,network,oauth}], is_instance_admin}`；顺序 local、sftp、webdav、ftp、smb、s3、cos、oss、azure、baidu |
+| GET | `/methods?connection=` | viewer + 读 | 该连接可用的备份方式 `{methods:[{id,available,default,reason,warnings}]}`。MySQL：mysqldump（本平台没有可用 mysqldump 时 available=false 并说明原因，例如 Win10 ARM）、lemi；MariaDB 默认 lemi 并给出警告。SQLite：sqlite_file（默认）、lemi |
+| GET / PUT | `/settings` | viewer / admin | 空间备份设置 `{verify_connection_id}`：还原校验用的 MySQL 连接（必须本空间、非只读） |
+| GET | `/targets` | viewer | `{targets:[{id,name,kind,created_at,updated_at,usage:{files,bytes},config?,secrets_set?}]}`；`config` 只给空间 admin |
+| POST | `/targets` | admin（local 类型要求实例管理员） | `{name,kind,config:{...}}`，只校验配置、不连网 |
+| POST | `/targets/test` | admin | 用未保存的表单测试 `{id?,name,kind,config,clear?}`；带 id 时沿用已保存的密钥 |
+| GET / PUT / DELETE | `/targets/{id}` | viewer / admin / admin | 不能改类型；`clear:[字段]` 显式清除可选密钥；被计划使用时删除返回 409（目标上已有的备份文件不删） |
+| POST | `/targets/{id}/test` | admin | 写、查、列、读回比对、删一个 `lemi-probe-*` 探测文件。SFTP 首次连接返回 409 `sftp_host_key_unknown`（extra：fingerprint、key_type），指纹变化返回 409 `sftp_host_key_mismatch` |
+| POST | `/targets/{id}/host-key` | admin | 确认 SFTP 主机指纹 `{fingerprint:"SHA256:..."}` |
+| GET | `/targets/{id}/usage?actual=1` | viewer | `{recorded:{files,bytes}, actual?:{files,bytes}}`：recorded 来自 Lemi 自己的记录；actual=1 时实际列目录统计 |
+| POST | `/targets/{id}/baidu/device` | admin | 百度网盘设备码授权第一步，返回 `{device_code,user_code,verification_url,qrcode_url,expires_in,interval}` |
+| POST | `/targets/{id}/baidu/poll` | admin | `{device_code}` → `{authorized:false,pending:true,slow_down}` 或 `{authorized:true}`（令牌加密写回配置） |
+| GET | `/plans?connection=` | viewer | `{plans:[计划视图 + busy]}` |
+| POST | `/plans` | admin | 见下方计划字段 |
+| GET / PUT / DELETE | `/plans/{id}` | viewer / admin / admin | 不能改所属连接；删除计划不删已有备份 |
+| POST | `/plans/{id}/run` | member + 写 | 立即备份，返回运行记录（异步执行）；同一连接正在备份/还原/校验时 409 |
+| GET | `/runs?plan=&connection=&status=&cursor=&limit=` | viewer | `{runs:[...], next_cursor}`，按时间倒序，cursor 为上一页最后一条的 id，limit 默认 50、最多 200 |
+| GET | `/runs/{id}` | viewer | 运行记录 + `manifest`、`files:[{target_id,path,size,status(ok/failed/deleted),error}]`、`verify`（校验详情），运行中时带 `progress` |
+| DELETE | `/runs/{id}` | admin | 删除各目标上的文件与清单，再删记录（任一目标删除失败则保留记录） |
+| POST | `/runs/{id}/cancel` | member + 写 | 取消运行中的备份 |
+| POST | `/runs/{id}/download` | viewer + 读 | `{format:"raw"\|"sql", target_id?}` → `{url:"/api/v1/downloads/<令牌>", filename}`；raw 原样（压缩、加密的原文件）；sql 服务端解密解压流式输出（SQL 备份得到 .sql，SQLite 文件快照得到 .db）；令牌一次性、5 分钟、只限本人；记审计 |
+| POST | `/runs/{id}/verify` | member | 立即做还原校验，返回 `{task_id}` |
+| POST | `/runs/{id}/restore/precheck` | member + 对目标连接写 | `{connection_id?, database_map?, method?}` → `{items:[{source,target,exists,tables,need_confirm,confirm_text}], method, method_error?}` |
+| POST | `/runs/{id}/restore` | member + 对目标连接写 | `{connection_id?, database_map?:{备份里的库:目标库}, method?:"mysql"\|"lemi"\|"sqlite_file", target_id?, confirm?:{目标库:输入的文字}}`；目标非空且没有正确确认时 409 `restore_confirm_required`（extra 为预检结果，SQLite 要输入连接名）；返回还原记录（异步） |
+| GET | `/restores?cursor=&limit=`、`/restores/{id}` | viewer | 还原记录 `{id,run_id,target_id,connection_id,connection_name,database_map,method,status,error,result,created_by,started_at,finished_at,progress?}` |
+| POST | `/tasks/{id}/cancel` | member + 写 | 取消还原或校验任务（id 为还原记录 id 或校验 task_id） |
+
+计划字段（POST/PUT `/plans` 请求，视图同名返回）：`connection_id`、`name`、`enabled`、`method`（mysqldump | lemi | sqlite_file）、`databases`（MySQL 选的库，空 = 全部用户库）、`compression`（zstd 默认 5 级 | gzip 默认 6 级 | none）、`compression_level`、`encrypt`、`passphrase`（只写，至少 12 位；视图只给 `passphrase_set`）、`targets`（目标 ID）、`schedule`（sched.Spec：`{kind:hourly|daily|weekly|monthly|cron|manual, minute, time, weekdays, day, cron, timezone}`）、`retention`（`{mode:""|count|days|gfs, count, days, hourly, daily, weekly, monthly, yearly}`）、`verify`（`{after_backup:bool, schedule?:Spec}`）、`notify_success` / `notify_failure`（通知渠道 ID）。视图另有 `schedule_text`、`next_run_at`、`retry_at`、`retry_attempt`、`next_verify_at`。
+
+运行记录字段：`id, plan_id, plan_name, connection_id, connection_name, driver, trigger(schedule|manual|retry), attempt, status(running|success|failed|canceled), method, tool, server_version, databases, file_name, compression, encrypted, size, raw_size, sha256, warnings, error, created_by, started_at, finished_at, verify_status(""|running|ok|failed), verify_at`。
+
+执行规则：同一连接同一时刻只跑一个任务（备份、还原、校验共用）；全局并发 3；超时 23 小时；计划触发的失败自动重试 3 次（1、5、15 分钟后），每次失败都发失败通知；启动时残留的「运行中」记为失败（服务重启中断）。多个目标同时写同一份数据流，某个目标失败时放弃它、其余继续，至少一个目标成功即为成功（失败的目标记在 files 与 warnings 里）。必须预先知道大小的目标（百度网盘、勾选「先暂存」的 WebDAV）会暂存到 `<数据目录>/tmp/backup/spool/`，SQLite 文件快照先 `VACUUM INTO` 到 `<数据目录>/tmp/backup/snapshot/`，用完即删。mysqldump 的口令经临时选项文件（0600，`--defaults-file`，用完删除）传入，不进命令行；除「直连 + verify-full」外一律经 127.0.0.1 随机端口的临时转发连数据库（SSH 隧道、代理与网络策略都在转发的拨号里执行），经转发时 verify-full 降为只校验 CA 并给出警告。
+
+备份清单 `<文件名>.manifest.json`（不加密）：`{format:"lemi-backup-manifest/1", backup_id, plan_id, workspace_id, connection_id, connection_name, driver, method, tool, server_product, server_version, databases:[{Name, Tables:[{Name,Rows,Hash}], Views, Routines, Triggers, Events}], file, compression, compression_level, encrypted, encryption, size, raw_size, sha256, started_at, finished_at, warnings, hash_algorithm}`。mysqldump 备份的每表行数由 Lemi 旁观输出流统计（没有内容哈希）；自研导出器与 SQLite 文件快照还有内容哈希（与 `sqldump.TableChecksum` 相同）。
+
+还原校验：MySQL 备份还原到校验连接上的临时库 `lemi_verify_<随机>`（多库时加 `_<序号>`），mysqldump 备份用 mysql 客户端（按映射改写 `CREATE DATABASE` 与 `USE` 行），自研备份用自研导入器；逐表比对行数（有哈希时比对哈希），检查缺表与多表，结束删除临时库。SQLite 在 `<数据目录>/tmp/backup/verify/` 的临时文件里还原，`PRAGMA integrity_check` 后逐表比对。结果写进运行记录的 `verify`：`{ok, method, connection, temp_databases, tables_checked, rows_checked, hash_checked, integrity, mismatches:[{database,table,expected_rows,got_rows,expected_hash,got_hash,error}], error, duration_ms, temp_db_dropped}`；失败时发 `verify_failed` 到计划的失败渠道。
+
+还原：mysqldump 备份默认用 mysql 客户端（库名映射同上改写），也可选自研导入器；自研备份只能用自研导入器（映射作用于 CREATE/DROP/ALTER DATABASE 与 USE）。SQLite 文件快照还原：先写到数据库所在目录的临时文件并做完整性检查，关闭该连接的连接池与控制台会话，原文件（连同 -wal/-shm）改名为 `<文件>.before-restore-<UTC 时间>` 保留，再把临时文件改成正式名；还原记录的 `result.previous_file` 给出保留的文件名。还原成功/失败发 `restore_done` / `restore_failed` 到计划的成功/失败渠道，并记审计。
+
+### 23.2 mysqldump 工具（实例管理员）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/admin/dumptools` | `{platform, platform_error?, versions:[{version,series,available,installed,file,size_bytes}], custom:{mysqldump_path,mysql_path}, custom_version?, custom_error?, base_url}` |
+| POST | `/admin/dumptools/{version}/install` | 下载 `<LEMI_TOOLS_BASE_URL>/<tag>/<文件名>`，校验 SHA-256，安全解压（拒绝路径穿越、链接、超大与过多文件）到 `<数据目录>/tools/mysql-<版本>/<os-arch>/`；失败删除。备份或还原需要时也会自动安装 |
+| DELETE | `/admin/dumptools/{version}` | 删除已安装的版本 |
+| PUT | `/admin/dumptools/custom` | `{mysqldump_path, mysql_path}`：指定服务器上已安装的客户端（读取 `--version`；两项都为空表示取消）。会被执行，所以要求 10 分钟内验证过身份（re-auth） |
+
+工具包布局（`scripts/extract-mysql-tools.sh` 产出）：没有顶层目录，`bin/mysqldump`、`bin/mysql`（Windows 为 .exe，DLL 也在 bin/）、`lib/<依赖库>`、`LICENSE`、`README-lemi.txt`。服务器版本 → 客户端：MySQL 5.x 与 8.0 用 8.0 客户端（5.7 加 `--column-statistics=0`），8.1–8.4 用 8.4，9.x 及以后用清单里同主版本最新的；清单缺对应系列（或该系列缺本平台的包）时用不低于它的最老可用版本并给出警告。MariaDB 用 8.0 客户端加 `--column-statistics=0`，并建议改用自研导出器。mysqldump 参数：`--single-transaction --quick --routines --triggers --events --hex-blob --default-character-set=utf8mb4 --max-allowed-packet=1G --no-tablespaces --set-gtid-purged=OFF --databases <库…>`。
+
+### 23.3 健康检查（`/workspaces/{ws}/health`）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/` | viewer | 当前用户能看到的连接的状态 `{connections:[{connection_id,name,driver,env,enabled,interval_sec,status(unknown|up|down|disabled),fails,last_check_at,last_ok_at,last_latency_ms,last_error,changed_at}]}` |
+| GET | `/{cid}/config` | viewer + 读 | `{connection_id, custom, config:{enabled,interval_sec,timeout_sec,fail_threshold,channels}, defaults}`；没有配置行的连接按默认值启用（60 秒、10 秒、连续 3 次失败下线、1 次成功恢复） |
+| PUT | `/{cid}/config` | admin | 请求为 config 对象：interval_sec 10–86400，timeout_sec 1–120 且不大于间隔，fail_threshold 1–100，channels 必须是本空间的通知渠道；关闭时状态回到 unknown |
+| GET | `/{cid}/timeline?range=day\|7d\|30d&tz=` | viewer + 读 | `{range, step(hour|day), tz, interval_sec, buckets:[{start,end,checks,failures,uptime|null,avg_latency_ms,p95_latency_ms,max_latency_ms,status(none|up|down|partial)}], summary}`；day = 今天按小时，7d/30d = 含今天的自然日；延迟只统计成功的检查 |
+| GET | `/{cid}/checks?cursor=&limit=&failed=1` | viewer + 读 | 原始检查记录 `{checks:[{id,at,ok,latency_ms,error,status,manual}], next_cursor}`，limit 默认 100、最多 500 |
+| POST | `/{cid}/check` | member + 读 | 立即检查（同一连接的并发请求共享一次检查），返回检查结果 |
+
+实时消息 `health`（推给空间成员，排除对该连接被收紧为 none 的人）：`{workspace_id, connection_id, at, ok, latency_ms, error, status, prev, changed, fails, manual}`。只在状态变化（下线、恢复）时发 `conn_down` / `conn_up` 通知；检查记录保留 30 天。
+
+### 23.4 通知（`/workspaces/{ws}/notify`）与系统邮件
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/kinds` | viewer | `{kinds:[{id,name,name_en,help,fields:[...,show_if]}], events:[{id,name,name_en}], system_smtp:bool}`；渠道类型 email、webhook、dingtalk、wecom、feishu |
+| GET / POST | `/channels` | viewer / admin | 视图 `{id,workspace_id,name,kind,enabled,created_by,created_at,updated_at}`，空间 admin 另有 `config`（不含密钥）、`secrets_set`、`url_host`；POST 请求 `{name,kind,enabled?,config,clear?}` |
+| GET / PUT / DELETE | `/channels/{id}` | viewer / admin / admin | 删除渠道后发送记录保留 |
+| POST | `/channels/{id}/test` | admin | 同步发一次（不重试，结果也记录），成功 `{ok:true,latency_ms}`，失败 400 `notify_failed` |
+| POST | `/channels/test` | admin | 用未保存的表单测试 `{id?,name,kind,config,clear?}` |
+| GET | `/logs?cursor=&limit=&channel=` | viewer | `{logs:[{id,channel_id,channel_name,kind,event,level,title,message,status(sending|ok|failed),attempts,error,created_at,finished_at}], next_cursor}` |
+| GET | `/api/v1/admin/smtp` | 实例管理员 | 系统邮件服务器 `{configured,host,port,tls,username,from,secrets_set}` |
+| PUT | `/api/v1/admin/smtp` | 实例管理员 + re-auth | `{host,port,tls(ssl|starttls|none),username,password?,from,clear?}`；host 为空表示清空。首次启动时若从未保存过且设置了 LEMI_SMTP_*，按环境变量写入 |
+| POST | `/api/v1/admin/smtp/test` | 实例管理员 | `{to?, config?}`，to 不填发给管理员本人 |
+
+事件：`backup_success`、`backup_failed`、`restore_done`、`restore_failed`、`verify_failed`、`conn_down`、`conn_up`、`task_result`、`security`、`test`。发送失败重试 3 次（2、10、30 秒后；408/429 以外的 4xx、地址被拦截、配置错误不重试），每次发送写进记录，保留 30 天。工作空间渠道的出站一律按「允许访问内网」设置检查（DNS 解析后按实际 IP，云元数据地址永远拒绝），设置改动立即生效；实例管理员配置的系统邮件服务器允许内网（仍拒绝云元数据地址）。邮件加密方式 `none` 只用于不带口令的内网中继（不加密的连接拒绝发送口令）。
+
+Webhook 签名：`X-Lemi-Timestamp`（Unix 秒）、`X-Lemi-Signature: sha256=<hex(HMAC-SHA256(密钥, 时间戳 + "." + 正文))>`（GET 的「正文」为完整查询串），另带 `X-Lemi-Event`；接收方应做常量时间比较并拒绝与当前时间相差 5 分钟以上的请求。正文模板变量 `{{title}} {{message}} {{level}} {{link}} {{event}}` 按 Content-Type 转义。钉钉加签：`base64(HmacSHA256(key=secret, data=毫秒时间戳 + "\n" + secret))` 再 urlencode，拼 `&timestamp=&sign=`；飞书：`base64(HmacSHA256(key=秒时间戳 + "\n" + secret, data=""))`，放在请求体的 `timestamp`、`sign`；企业微信靠地址里的 key。钉钉、企业微信、飞书按响应体的 errcode/code 判定成败。
+
+安全事件（`account_locked`、`new_device_login`、`password_changed`、`totp_disabled`）用系统邮件服务器发给用户本人，内容含时间、IP、UA；用户没有邮箱或没有配置系统邮件服务器时只记日志。
+
+### 23.5 实时消息 `backup_progress`
+
+每秒推给空间成员一次，结束时再推一次带 `done:true` 与最终 `status`、`error` 的消息：`{kind(backup|restore|verify), id(运行记录 / 还原记录 / 校验任务 ID), workspace_id, connection_id, plan_id, phase(queued|preparing_tool|downloading_tool|running|uploading|comparing), bytes(已处理的原始数据字节), written(写到目标或从目标读的字节), total, rows, database, table, tables_done, tables_total, statements, errors, speed(字节/秒), elapsed_ms}`。
+
+### 23.6 离线工具
+
+`lemi backup-file decrypt <文件> [-o 输出] [--passphrase-file 文件]` 解密 .lemienc 得到压缩后的原文件；`lemi backup-file to-sql <文件> [...]` 解密（需要时）并按文件头识别 zstd/gzip 解压，得到 .sql（SQLite 文件快照得到 .db）。不需要 Lemi 数据目录；没给口令文件时在终端无回显输入；`-o -` 输出到标准输出；默认写在原文件旁边，不覆盖已有文件，出错时不留下不完整的输出文件。
