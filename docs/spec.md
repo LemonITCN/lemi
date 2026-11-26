@@ -542,18 +542,20 @@ workspace_* 只在用户的浏览器在线时提供；定时任务与 MCP 没有
 
 #### 16.5.1 浏览器端工具约定
 
-- 消息：服务端发 `{"t":"client_call","d":{"id","tool","args"}}`，浏览器回 `{"t":"client_result","d":{"id","result"}}`；工具不存在或抛异常时回 `{"id","error"}`。工具内部的业务错误放在 `result.error`（字符串），不抛异常。
+- 消息：服务端发 `{"t":"client_call","d":{"id","tool","args"}}`，浏览器回 `{"t":"client_result","d":{"id","result"}}`；工具不存在或抛异常时回 `{"id","error"}`。工具内部的业务错误放在 `result.error`（字符串），不抛异常。字段与服务端 §24.6 一致，下表是浏览器实际返回的完整字段（是 §24.6 的超集）。
 - 实现：`lemi-console/src/modules/workspace-tools/`（按需加载）。标签组件把可读状态与动作登记在 `src/stores/tabstate.ts`（`registerTabState(tabId, getter, actions)`）：表格标签动作 `update({where?, order_by?, scroll_to_row?})`（等加载完成）与 `loaded()`；控制台标签动作 `run(sql)`。工具只读登记的状态，不直接碰组件内部。
-- 档位与白名单（§16.4）由服务端在发出 `client_call` 之前判定；浏览器以用户本人的会话执行，数据库层权限照常生效。写语句（非 SELECT / WITH / SHOW / DESCRIBE / EXPLAIN / VALUES / TABLE / USE / 只读 PRAGMA）：服务端已按档位确认过、或档位允许自动执行时在参数里带 `confirmed: true`；没带的，浏览器弹出确认框（生产连接醒目提示），用户拒绝则返回 `{error}`。
-- 样本：`sample` / `visible_rows_sample` 为前 20 行纯文本二维数组（NULL 写作 `NULL`，二进制写作 `0x` 十六进制；单元格超过 500 字符截断并带 `…`）；选区最多 200 行。
+- 权限：档位与白名单（§16.4）由服务端在发出 `client_call` 之前判定；`args.visible_connections` 是本次对智能体可见的连接 ID，浏览器拒绝打开、修改、读取其他连接的标签。浏览器以用户本人的会话执行，数据库层权限照常生效。
+- 写语句（非 SELECT / WITH / SHOW / DESCRIBE / EXPLAIN / VALUES / TABLE / USE / 只读 PRAGMA）：服务端审批过（或档位允许自动执行）时参数带 `approved: true`；没带的，浏览器弹确认框（生产连接醒目提示），用户拒绝则返回 `{error}`。
+- 行号：`selection.rows`、`goto_row` 用表格里显示的序号（从 1 开始，含翻页偏移）。
+- 样本：纯文本（NULL 写作 `NULL`，二进制写作 `0x` 十六进制，单元格超过 500 字符截断并带 `…`）。`sample` 前 20 行；`workspace_read_view` 的 `max_rows` 默认 20、最多 100。
 - 打开或修改过的标签标记 `fromAI`（标签栏显示 AI 标记）。
 
 | 工具 | 参数 | 返回 |
 |---|---|---|
-| `workspace_open_table` | `connection_id`、`db`（SQLite 可省略，默认 `main`）、`table`、`where?`、`order_by?`、`columns?`（只看这些列） | `{tab_id, db, table, where, order_by, offset, rows_loaded, has_more, columns, sample}`；失败 `{error}` |
-| `workspace_run_sql` | `connection_id`、`db?`、`sql`（可多条）、`title?`（标签标题）、`confirmed?` | `{tab_id, db, in_tx, results:[{kind: rows\|exec\|error, statement, columns, rows_loaded, affected, error, sample}]}` |
-| `workspace_update_view` | `tab_id?`（缺省 = 当前标签，必须是表格）、`where?`、`order_by?`、`columns?`、`scroll_to_row?`（从 0 开始，当前页内） | 同 `workspace_open_table` |
-| `workspace_read_view` | 无 | `{tab_id, kind, title, connection_id, db, table, where, order_by, sql, selection:{columns, rows}, visible_rows_sample, total_loaded}`；表格另有 `columns`、`offset`、`has_more`、`pending_changes`，控制台另有 `in_tx`、`results`；其他标签（DDL、设计器、ER 图、监控、账号）只给出类型、连接、库与对象名 |
+| `workspace_open_table` | `connection_id`、`db`（SQLite 可省略，默认 `main`）、`table`、`where?`、`order_by?`、`columns?`（只看这些列）、`visible_connections?` | `{tab_id, connection_id, db, table, where, order_by, offset, rows_loaded, has_more, columns, sample}`；失败 `{error}` |
+| `workspace_run_sql` | `connection_id`、`db?`、`sql`（可多条）、`title?`（标签标题）、`approved?`、`visible_connections?` | `{tab_id, connection_id, db, in_tx, results:[{kind: rows\|exec\|error, statement, columns, rows_loaded, affected, error, duration_ms, sample}]}` |
+| `workspace_update_view` | `tab_id?`（缺省 = 当前标签，必须是表格）、`where?`、`order_by?`、`columns?`、`goto_row?`、`visible_connections?` | 同 `workspace_open_table` |
+| `workspace_read_view` | `tab_id?`（缺省 = 当前标签）、`max_rows?`、`visible_connections?` | `{tab_id, kind, title, connection_id, db, table, where, order_by, sql, selection:{rows:[行号], columns:[列名], cells:[[行号, 列名, 值]]}, visible_rows_sample:{columns, rows}, total_loaded}`；表格另有 `offset`、`has_more`、`pending_changes`，控制台另有 `in_tx`、`results`；其他标签（DDL、设计器、ER 图、监控、账号）只给出类型、连接、库与对象名 |
 
 - `workspace_open_table`：同一张表已有标签时激活它并只改条件，不开新标签；条件不变则只等当前加载完成。
 - `workspace_run_sql`：每次新开一个控制台标签（会话独立），填入 SQL 后执行全部语句，结果显示在该标签的结果区。
