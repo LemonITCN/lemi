@@ -418,9 +418,9 @@ func (s *Service) StartRestore(ctx context.Context, r *Run, c *conns.Connection,
 	prog := &progress{Kind: "restore", ID: rec.ID, WorkspaceID: rec.WorkspaceID, ConnectionID: c.ID, PlanID: r.PlanID, phase: "queued"}
 	prog.total.Store(r.Size)
 	finish := s.track(prog)
-	s.wg.Add(1)
+	s.begin()
 	go func() {
-		defer s.wg.Done()
+		defer s.end()
 		defer release()
 		defer cancel()
 		defer s.setCancel(rec.ID, nil)

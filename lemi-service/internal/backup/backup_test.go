@@ -171,24 +171,15 @@ func (f *fixture) plan(t *testing.T, c *conns.Connection, method string, encrypt
 	return p
 }
 
-// wait 等全部后台任务结束。
+// wait 等全部后台任务结束（包括备份后自动启动的校验）。
 func (f *fixture) wait(t *testing.T) {
 	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(120 * time.Second)
 	for time.Now().Before(deadline) {
-		f.s.mu.Lock()
-		n := len(f.s.busy)
-		f.s.mu.Unlock()
-		if n == 0 {
-			time.Sleep(20 * time.Millisecond)
-			f.s.mu.Lock()
-			n = len(f.s.busy)
-			f.s.mu.Unlock()
-			if n == 0 {
-				return
-			}
+		if f.s.Active() == 0 {
+			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("等待后台任务超时")
 }

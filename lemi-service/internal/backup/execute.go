@@ -238,22 +238,24 @@ func (s *Service) StartBackup(ctx context.Context, p *Plan, trigger string, atte
 	s.setCancel(r.ID, cancel)
 	prog := &progress{Kind: "backup", ID: r.ID, WorkspaceID: r.WorkspaceID, ConnectionID: c.ID, PlanID: p.ID, phase: "queued"}
 	finish := s.track(prog)
-	s.wg.Add(1)
+	s.begin()
 	go func() {
-		defer s.wg.Done()
-		defer release()
+		defer s.end()
 		defer cancel()
 		defer s.setCancel(r.ID, nil)
+		var res *execResult
+		var err error
 		// 全局并发上限
 		select {
 		case s.sem <- struct{}{}:
+			prog.set(func(p *progress) { p.phase = "running" })
+			res, err = s.execute(rctx, r, p, c, prog)
+			<-s.sem
 		case <-rctx.Done():
-			s.finishRun(r, p, nil, rctx.Err(), finish)
-			return
+			err = rctx.Err()
 		}
-		defer func() { <-s.sem }()
-		prog.set(func(p *progress) { p.phase = "running" })
-		res, err := s.execute(rctx, r, p, c, prog)
+		// 先释放连接再收尾：备份后校验可能要用同一个连接
+		release()
 		s.finishRun(r, p, res, err, finish)
 	}()
 	return r, nil

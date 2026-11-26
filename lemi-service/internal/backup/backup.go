@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/LemonITCN/lemi/lemi-service/internal/accounts"
@@ -77,6 +78,7 @@ type Service struct {
 	cancels map[string]context.CancelFunc // 任务 ID → 取消
 	prog    map[string]*progress          // 任务 ID → 进度
 	wg      sync.WaitGroup
+	active  atomic.Int64 // 运行中的后台任务数（含排队）
 	stopCtx context.Context
 	stop    context.CancelFunc
 	now     func() time.Time
@@ -91,6 +93,12 @@ func New(d Deps) *Service {
 	return &Service{Deps: d, sem: make(chan struct{}, MaxConcurrent), busy: map[string]string{}, cancels: map[string]context.CancelFunc{},
 		prog: map[string]*progress{}, stopCtx: ctx, stop: cancel, now: time.Now}
 }
+
+func (s *Service) begin() { s.wg.Add(1); s.active.Add(1) }
+func (s *Service) end()   { s.active.Add(-1); s.wg.Done() }
+
+// Active 运行中（含排队）的后台任务数。
+func (s *Service) Active() int64 { return s.active.Load() }
 
 // Close 取消所有运行中的任务并等待收尾。
 func (s *Service) Close() error {
