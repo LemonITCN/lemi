@@ -1,0 +1,481 @@
+# 手动触发：从 MySQL 官方 CDN 下载各平台发行包 → 校验官方 GPG 签名（拿不到签名时退回官方 MD5，两者都不行就失败）
+# → 用 scripts/extract-mysql-tools.sh 只取 mysqldump、mysql 及其依赖库 → 发布到本仓库 tools-mysql-<版本> Release，
+# 并汇总出可直接替换 lemi-service/internal/dumptools/manifest.json 的清单（docs/spec.md §13）。
+#
+# 已发布的包视为不可变：旧版 Lemi 的清单钉住了 SHA-256。Release 里已有同名文件时默认沿用旧文件、不覆盖，
+# 清单也写旧文件的 SHA-256；确实要换文件时勾选 replace_assets。
+# 官方没有提供某个平台的发行包（例如较新版本已不出 Intel macOS 包）时，该平台跳过，清单里不出现这个平台。
+
+name: mysql-tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "MySQL 版本，逗号分隔，如 8.0.46,8.4.13.1,9.7.4.1；留空用默认值"
+        required: false
+        default: ""
+        type: string
+      replace_assets:
+        description: "覆盖 Release 里已有的同名文件（会让已发布 Lemi 清单里的 SHA-256 失效，一般不要勾）"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mysql-tools
+  cancel-in-progress: false
+
+env:
+  # 2026-11-26 在 dev.mysql.com/downloads 与 cdn.mysql.com 核实的各系列最新版：
+  #   8.0 → 8.0.46（8.0 系列最后一版）；8.4 LTS → 8.4.13.1；9.x → 9.7.4.1（9.7 是 LTS）。
+  #   创新版已改用年份版本号（当时为 26.10.0.1），需要时在输入里加上。
+  #   四段版本号是官方补丁重发版，程序 --version 自报前三段。
+  DEFAULT_VERSIONS: "8.0.46,8.4.13.1,9.7.4.1"
+  # MySQL Release Engineering <mysql-build@oss.oracle.com> 的签名公钥（8.0.44+、8.4.7+、9.5.0+ 用它签名），
+  # 只认这个主钥指纹。公钥先从 repo.mysql.com 取，取不到再从 keyserver.ubuntu.com 取。
+  MYSQL_GPG_FPR: "BCA43417C3B485DD128EC6D4B7B3B788A8D3785C"
+  MYSQL_GPG_KEY_URL: "https://repo.mysql.com/RPM-GPG-KEY-mysql-2025"
+  MYSQL_CDN: "https://cdn.mysql.com"
+
+jobs:
+  plan:
+    name: 解析版本
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      versions: ${{ steps.plan.outputs.versions }}
+    steps:
+      - name: 生成版本 × 平台矩阵
+        id: plan
+        shell: bash
+        env:
+          INPUT_VERSIONS: ${{ inputs.versions }}
+        run: |
+          set -euo pipefail
+          raw=${INPUT_VERSIONS}
+          if [ -z "$(printf '%s' "${raw}" | tr -d ', \t')" ]; then
+            raw=${DEFAULT_VERSIONS}
+          fi
+          versions=$(printf '%s\n' "${raw}" | tr ', \t' '\n\n\n' | sed '/^$/d' | awk '!seen[$0]++')
+          for v in ${versions}; do
+            if ! printf '%s' "${v}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+              echo "::error::版本号格式不对：${v}"
+              exit 1
+            fi
+          done
+          # 运行环境：linux-arm64 用公开仓库免费的 arm 运行器；Intel macOS 只剩 macos-15-intel（macos-13 已下线）
+          platforms='[
+            {"platform":"linux-amd64","runner":"ubuntu-24.04"},
+            {"platform":"linux-arm64","runner":"ubuntu-24.04-arm"},
+            {"platform":"darwin-arm64","runner":"macos-15"},
+            {"platform":"darwin-amd64","runner":"macos-15-intel"},
+            {"platform":"windows-amd64","runner":"windows-latest"}
+          ]'
+          versions_json=$(printf '%s\n' ${versions} | jq -R . | jq -cs .)
+          matrix=$(jq -cn --argjson v "${versions_json}" --argjson p "${platforms}" \
+            '{include: [$v[] as $ver | $p[] | . + {version: $ver, series: ($ver | split(".")[0:2] | join("."))}]}')
+          echo "versions=${versions_json}" >> "${GITHUB_OUTPUT}"
+          echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
+          echo "本次版本：${versions_json}"
+
+  build:
+    name: ${{ matrix.version }} ${{ matrix.platform }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ matrix.version }}
+      SERIES: ${{ matrix.series }}
+      PLATFORM: ${{ matrix.platform }}
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 准备目录与工具
+        run: |
+          set -euo pipefail
+          base=${RUNNER_TEMP}
+          if command -v cygpath >/dev/null 2>&1; then
+            base=$(cygpath -u "${RUNNER_TEMP}")
+          fi
+          # 下载的官方文件是不受信任的数据，单独放在新的空目录里；脚本在仓库里，用参数传路径
+          mkdir -p "${base}/mysql-dl" "${base}/mysql-out" "${base}/mysql-work" "${base}/mysql-gnupg"
+          chmod 700 "${base}/mysql-gnupg"
+          {
+            echo "DL_DIR=${base}/mysql-dl"
+            echo "OUT_DIR=${base}/mysql-out"
+            echo "WORK_DIR=${base}/mysql-work"
+            echo "GNUPGHOME=${base}/mysql-gnupg"
+          } >> "${GITHUB_ENV}"
+          case "${PLATFORM}" in
+            linux-*)
+              # libncurses6：官方 mysql 程序依赖它（系统库，不打包），运行器上没有的话 ldd 会报 not found
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq --no-install-recommends patchelf gnupg xz-utils binutils libncurses6
+              ;;
+            darwin-*)
+              command -v gpg >/dev/null 2>&1 || brew install gnupg || echo "::warning::gpg 安装失败，只能用官方 MD5 校验"
+              ;;
+            windows-*)
+              command -v gpg >/dev/null 2>&1 || echo "::warning::没有 gpg，只能用官方 MD5 校验"
+              ;;
+          esac
+          if command -v gpg >/dev/null 2>&1; then gpg --version | head -n 1; fi
+
+      - name: 下载官方发行包
+        id: fetch
+        run: |
+          set -euo pipefail
+          v=${VERSION}
+          # 候选文件名按优先级排列；macOS 包名里的系统版本随 MySQL 版本变化，从低往高试（兼容的系统更多）
+          case "${PLATFORM}" in
+            linux-amd64)
+              cands="mysql-${v}-linux-glibc2.28-x86_64-minimal.tar.xz mysql-${v}-linux-glibc2.17-x86_64-minimal.tar.xz mysql-${v}-linux-glibc2.28-x86_64.tar.xz mysql-${v}-linux-glibc2.17-x86_64.tar.xz"
+              ;;
+            linux-arm64)
+              cands="mysql-${v}-linux-glibc2.28-aarch64-minimal.tar.xz mysql-${v}-linux-glibc2.28-aarch64.tar.xz mysql-${v}-linux-glibc2.17-aarch64.tar.xz"
+              ;;
+            darwin-arm64 | darwin-amd64)
+              if [ "${PLATFORM}" = "darwin-amd64" ]; then arch=x86_64; else arch=arm64; fi
+              cands=""
+              for m in 12 13 14 15 26 27 28; do cands="${cands} mysql-${v}-macos${m}-${arch}.tar.gz"; done
+              ;;
+            windows-amd64)
+              cands="mysql-${v}-winx64.zip"
+              ;;
+            *)
+              echo "::error::未知平台 ${PLATFORM}"
+              exit 1
+              ;;
+          esac
+
+          # 只把 200 与 404 当作确定结果；其他状态（超时、5xx、被拦）重试后仍不行就失败，不能误判成“官方没有”
+          http_status() {
+            local code="000" i
+            for i in 1 2 3 4 5; do
+              code=$(curl -sS -o /dev/null -I -L -w '%{http_code}' --connect-timeout 20 --max-time 60 "$1" 2>/dev/null || true)
+              case "${code}" in
+                200 | 404)
+                  printf '%s' "${code}"
+                  return 0
+                  ;;
+              esac
+              sleep $((i * 5))
+            done
+            printf '%s' "${code}"
+          }
+
+          file=""
+          base_url=""
+          for f in ${cands}; do
+            # 当前版本在 Downloads，被新版本取代后移到 archives
+            for b in "${MYSQL_CDN}/Downloads/MySQL-${SERIES}" "${MYSQL_CDN}/archives/mysql-${SERIES}"; do
+              code=$(http_status "${b}/${f}")
+              case "${code}" in
+                200)
+                  file=${f}
+                  base_url=${b}
+                  break 2
+                  ;;
+                404) ;;
+                *)
+                  echo "::error::访问 ${b}/${f} 失败（HTTP ${code}），无法判断官方是否提供该文件"
+                  exit 1
+                  ;;
+              esac
+            done
+          done
+
+          if [ -z "${file}" ]; then
+            echo "::notice::MySQL 官方没有 ${VERSION} 的 ${PLATFORM} 发行包（Downloads 与 archives 都查过），跳过该平台"
+            # 用 printf 直接写 UTF-8，避免 Windows 上把中文当命令行参数传给 jq.exe 时被转码
+            printf '{"version":"%s","platform":"%s","reason":"官方未提供该平台的发行包","tried":"%s"}\n' \
+              "${VERSION}" "${PLATFORM}" "$(printf '%s' "${cands}" | sed 's/^ *//')" \
+              > "${OUT_DIR}/missing-${VERSION}-${PLATFORM}.json"
+            echo "missing=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          url="${base_url}/${file}"
+          echo "下载 ${url}"
+          curl -fSL --retry 5 --retry-all-errors --connect-timeout 30 -o "${DL_DIR}/${file}" "${url}"
+          ls -l "${DL_DIR}/${file}"
+          {
+            echo "ARCHIVE_FILE=${file}"
+            echo "ARCHIVE_URL=${url}"
+          } >> "${GITHUB_ENV}"
+          echo "missing=false" >> "${GITHUB_OUTPUT}"
+
+      - name: 校验官方签名与摘要
+        if: steps.fetch.outputs.missing == 'false'
+        run: |
+          set -euo pipefail
+          f="${DL_DIR}/${ARCHIVE_FILE}"
+
+          # 官方 MD5：CDN 上的 <文件>.md5，与 dev.mysql.com 下载页列出的 MD5 相同（下载页本身会拦截脚本访问）
+          md5_want=""
+          if curl -fsSL --retry 3 --retry-all-errors -o "${f}.md5" "${ARCHIVE_URL}.md5"; then
+            md5_want=$(awk 'NR == 1 { print tolower($1) }' "${f}.md5" | tr -d '\r')
+            printf '%s' "${md5_want}" | grep -Eq '^[0-9a-f]{32}$' || md5_want=""
+          fi
+          if command -v md5sum >/dev/null 2>&1; then
+            md5_got=$(md5sum "${f}" | awk '{ print $1 }')
+          else
+            md5_got=$(md5 -q "${f}")
+          fi
+          if [ -n "${md5_want}" ] && [ "${md5_got}" != "${md5_want}" ]; then
+            echo "::error::${ARCHIVE_FILE} 的 MD5 与官方不符（官方 ${md5_want}，实际 ${md5_got}）"
+            exit 1
+          fi
+
+          # GPG：签名在 CDN 上的 <文件>.asc；签名存在但校验不通过直接失败，不退回 MD5
+          gpg_ok=false
+          if ! command -v gpg >/dev/null 2>&1; then
+            echo "::warning::没有 gpg，无法校验签名"
+          elif ! curl -fsSL --retry 3 --retry-all-errors -o "${f}.asc" "${ARCHIVE_URL}.asc"; then
+            echo "::warning::拿不到 ${ARCHIVE_FILE}.asc"
+          else
+            for ku in "${MYSQL_GPG_KEY_URL}" "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&search=0x${MYSQL_GPG_FPR}"; do
+              if curl -fsSL --retry 3 --retry-all-errors -o "${GNUPGHOME}/mysql-key.asc" "${ku}"; then
+                gpg --batch --quiet --import "${GNUPGHOME}/mysql-key.asc" 2>/dev/null || true
+              fi
+              if gpg --batch --list-keys "${MYSQL_GPG_FPR}" >/dev/null 2>&1; then break; fi
+            done
+            if ! gpg --batch --list-keys "${MYSQL_GPG_FPR}" >/dev/null 2>&1; then
+              echo "::warning::拿不到 MySQL 签名公钥 ${MYSQL_GPG_FPR}"
+            else
+              status=$(gpg --batch --status-fd 1 --verify "${f}.asc" "${f}" 2>/dev/null | tr -d '\r' || true)
+              printf '%s\n' "${status}" | grep -E '^\[GNUPG:\] (GOODSIG|EXPKEYSIG|BADSIG|ERRSIG|VALIDSIG|REVKEYSIG)' || true
+              # VALIDSIG 行最后一个字段是主钥指纹，必须是钉住的那把
+              if printf '%s\n' "${status}" | grep -Eq "^\[GNUPG:\] VALIDSIG .* ${MYSQL_GPG_FPR}\$" &&
+                printf '%s\n' "${status}" | grep -Eq '^\[GNUPG:\] (GOODSIG|EXPKEYSIG) ' &&
+                ! printf '%s\n' "${status}" | grep -Eq '^\[GNUPG:\] (BADSIG|REVKEYSIG) '; then
+                gpg_ok=true
+              else
+                echo "::error::${ARCHIVE_FILE} 的 GPG 签名校验不通过（不是 MySQL 官方公钥签的，或文件被改过）"
+                exit 1
+              fi
+            fi
+          fi
+
+          if [ "${gpg_ok}" = "true" ]; then
+            method="OpenPGP signature by MySQL Release Engineering (key ${MYSQL_GPG_FPR})"
+            if [ -n "${md5_want}" ]; then method="${method}; official MD5 ${md5_want}"; fi
+          elif [ -n "${md5_want}" ]; then
+            method="official MD5 ${md5_want} (no usable signature)"
+            echo "::warning::${ARCHIVE_FILE} 没能做 GPG 校验，只用官方 MD5 校验"
+          else
+            echo "::error::${ARCHIVE_FILE} 既没能校验签名也拿不到官方 MD5，不能跳过校验"
+            exit 1
+          fi
+          echo "VERIFY_METHOD=${method}" >> "${GITHUB_ENV}"
+          echo "校验通过：${method}"
+
+      - name: 提取并打包
+        if: steps.fetch.outputs.missing == 'false'
+        run: |
+          set -euo pipefail
+          TMPDIR="${WORK_DIR}" MYSQL_ARCHIVE_URL="${ARCHIVE_URL}" MYSQL_VERIFY_METHOD="${VERIFY_METHOD}" \
+            bash scripts/extract-mysql-tools.sh "${DL_DIR}/${ARCHIVE_FILE}" "${PLATFORM}" "${VERSION}" "${OUT_DIR}"
+          jq -cn --arg v "${VERSION}" --arg p "${PLATFORM}" --arg f "${ARCHIVE_FILE}" --arg u "${ARCHIVE_URL}" --arg m "${VERIFY_METHOD}" \
+            '{version: $v, platform: $p, official_file: $f, official_url: $u, verify: $m}' \
+            > "${OUT_DIR}/source-${VERSION}-${PLATFORM}.json"
+          ls -l "${OUT_DIR}"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: mysql-client-${{ matrix.version }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/mysql-out/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  publish:
+    name: 发布 Release 与汇总清单
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSIONS_JSON: ${{ needs.plan.outputs.versions }}
+      REPLACE_ASSETS: ${{ inputs.replace_assets }}
+      PLATFORM_ORDER: '["linux-amd64","linux-arm64","darwin-arm64","darwin-amd64","windows-amd64"]'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 下载各平台产物
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mysql-client-*
+          path: dist
+          merge-multiple: true
+
+      - name: 发布到 Release
+        run: |
+          set -euo pipefail
+          ls -l dist
+          mkdir -p final
+          for v in $(jq -r '.[]' <<<"${VERSIONS_JSON}"); do
+            tag="tools-mysql-${v}"
+            series=$(printf '%s' "${v}" | cut -d. -f1,2)
+            shopt -s nullglob
+            frags=(dist/manifest-"${v}"-*.json)
+            shopt -u nullglob
+            if [ "${#frags[@]}" -eq 0 ]; then
+              echo "::warning::${v} 没有任何平台的产物，不发布"
+              continue
+            fi
+
+            # 不能成为仓库的“最新版本”，否则会干扰 Lemi 在线升级对最新正式版的判断
+            if ! gh release view "${tag}" >/dev/null 2>&1; then
+              gh release create "${tag}" --title "MySQL ${v} 客户端工具（mysqldump / mysql）" \
+                --notes "正在上传……" --target "${GITHUB_SHA}" --latest=false
+            fi
+            existing=$(gh release view "${tag}" --json assets --jq '.assets[].name')
+
+            for frag in "${frags[@]}"; do
+              name=$(jq -r .name "${frag}")
+              sha_new=$(jq -r .sha256 "${frag}")
+              if [ "$(sha256sum "dist/${name}" | awk '{ print $1 }')" != "${sha_new}" ]; then
+                echo "::error::dist/${name} 的 SHA-256 与清单片段不符"
+                exit 1
+              fi
+              if grep -qxF -- "${name}" <<<"${existing}" && [ "${REPLACE_ASSETS}" != "true" ]; then
+                rm -rf released && mkdir released
+                gh release download "${tag}" --pattern "${name}" --dir released
+                sha_old=$(sha256sum "released/${name}" | awk '{ print $1 }')
+                if [ "${sha_old}" != "${sha_new}" ]; then
+                  echo "::warning::${tag} 已有 ${name}，沿用已发布的文件（SHA-256 ${sha_old}），本次构建结果（${sha_new}）不上传"
+                else
+                  echo "${tag} 已有相同的 ${name}，不重复上传"
+                fi
+                jq -c --arg s "${sha_old}" '.sha256 = $s' "${frag}" > "final/$(basename "${frag}")"
+              else
+                gh release upload "${tag}" "dist/${name}" --clobber
+                cp "${frag}" "final/$(basename "${frag}")"
+              fi
+            done
+
+            src_url="https://cdn.mysql.com/Downloads/MySQL-${series}/mysql-${v}.tar.gz"
+            src_archive_url="https://cdn.mysql.com/archives/mysql-${series}/mysql-${v}.tar.gz"
+            {
+              echo "从 MySQL ${v} 官方发行包中提取的 \`mysqldump\` 与 \`mysql\`（及其依赖库），供 Lemi 下载使用（docs/spec.md §13）。"
+              echo
+              echo "| 平台 | 文件 | SHA-256 | 官方发行包 | 官方包校验 |"
+              echo "|---|---|---|---|---|"
+              for p in $(jq -r '.[]' <<<"${PLATFORM_ORDER}"); do
+                fr="final/manifest-${v}-${p}.json"
+                src="dist/source-${v}-${p}.json"
+                if [ -f "${fr}" ]; then
+                  printf '| %s | %s | `%s` | [%s](%s) | %s |\n' "${p}" "$(jq -r .name "${fr}")" "$(jq -r .sha256 "${fr}")" \
+                    "$(jq -r .official_file "${src}")" "$(jq -r .official_url "${src}")" "$(jq -r .verify "${src}")"
+                elif [ -f "dist/missing-${v}-${p}.json" ]; then
+                  printf '| %s | 官方未提供该平台的发行包 / not provided by Oracle | | | |\n' "${p}"
+                fi
+              done
+              echo
+              echo "**许可证**：MySQL 社区版以 GNU 通用公共许可证第 2 版（GPL-2.0）发布。每个包内附官方发行包里的 \`LICENSE\` 原文，以及说明来源、提取了哪些文件、做了哪些改动的 \`README-lemi.txt\`。"
+              echo
+              echo "**对应源代码**：${src_url}（该版本被更新版本取代后，官方会把它移到 ${src_archive_url}）"
+              echo
+              echo "---"
+              echo
+              echo "\`mysqldump\` and \`mysql\` (with the libraries they need) extracted from the official MySQL ${v} packages for Lemi."
+              echo "MySQL Community Edition is licensed under the GNU General Public License, version 2 (GPL-2.0). Each package contains the official \`LICENSE\` file and a \`README-lemi.txt\` describing the source, the extracted files and the changes made."
+              echo
+              echo "**Corresponding source code**: ${src_url} (moved to ${src_archive_url} once a newer release supersedes it)."
+            } > "notes-${v}.md"
+            gh release edit "${tag}" --notes-file "notes-${v}.md"
+            echo "已发布 ${tag}"
+          done
+
+      - name: 汇总清单
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          frags=(final/manifest-*.json)
+          missing=(dist/missing-*.json)
+          shopt -u nullglob
+          if [ "${#frags[@]}" -eq 0 ]; then
+            echo "::error::没有任何产物"
+            exit 1
+          fi
+          new=$(jq -cs --argjson order "${PLATFORM_ORDER}" '
+            group_by(.version)
+            | map({
+                version: .[0].version,
+                series: .[0].series,
+                tag: .[0].tag,
+                files: (sort_by(.platform as $p | $order | index($p))
+                        | map({key: .platform, value: {name, sha256}})
+                        | from_entries)
+              })' "${frags[@]}")
+
+          # 以仓库里现有清单为底：本次构建的版本按平台覆盖，其他版本与字段原样保留
+          cur=lemi-service/internal/dumptools/manifest.json
+          if [ -f "${cur}" ] && jq -e '.versions | type == "array"' "${cur}" >/dev/null 2>&1; then
+            old=$(jq -c . "${cur}")
+          else
+            old='{"versions":[]}'
+          fi
+          jq --indent 2 -n --argjson old "${old}" --argjson new "${new}" --argjson order "${PLATFORM_ORDER}" '
+            ($new | map(.version)) as $nv
+            | $old + {
+                versions: (
+                  [$old.versions[] | select(.version as $v | ($nv | any(. == $v)) | not)]
+                  + [$new[] | . as $n
+                      | ([$old.versions[] | select(.version == $n.version)][0] // {}) as $o
+                      | $o + ($n | del(.files))
+                        + {files: (($o.files // {}) + $n.files | to_entries
+                                   | sort_by(.key as $k | ($order | index($k)) // 99) | from_entries)}]
+                  | sort_by(.version | split(".") | map(tonumber))
+                )
+              }' > manifest.json
+          cat manifest.json
+
+          {
+            echo "## MySQL 客户端工具"
+            echo
+            echo "| 版本 | 平台 | 文件 | SHA-256 |"
+            echo "|---|---|---|---|"
+            jq -r '.[] | . as $v | .files | to_entries[] | "| \($v.version) | \(.key) | \(.value.name) | `\(.value.sha256)` |"' <<<"${new}"
+            if [ "${#missing[@]}" -gt 0 ]; then
+              echo
+              echo "### 官方未提供、已跳过的平台"
+              echo
+              jq -r '"- \(.version) \(.platform)"' "${missing[@]}"
+            fi
+            echo
+            echo "### 清单（可直接替换 \`lemi-service/internal/dumptools/manifest.json\`）"
+            echo
+            echo '```json'
+            cat manifest.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: 上传清单
+        uses: actions/upload-artifact@v7
+        with:
+          name: dumptools-manifest
+          path: manifest.json
+          if-no-files-found: error
