@@ -9,7 +9,9 @@ import (
 
 type fakeHealth struct{}
 
-func (fakeHealth) Status(ctx context.Context, id string) (string, int64, int64) { return "up", 1764148800000, 12 }
+func (fakeHealth) Status(ctx context.Context, id string) (string, int64, int64) {
+	return "up", 1764148800000, 12
+}
 
 func TestAITools(t *testing.T) {
 	f := setup(t)

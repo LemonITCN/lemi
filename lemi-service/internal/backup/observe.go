@@ -10,10 +10,14 @@ import (
 // dumpObserver 旁观 mysqldump 的输出流（不改动数据），统计每张表的行数，写进备份清单供还原校验比对。
 //
 // mysqldump 的输出格式固定：每条 INSERT 独占一行（字符串里的换行被转义成 \n，所以值里不会出现裸换行），
-// 形如 `INSERT INTO `t` VALUES (..),(..);`；`USE `db`;` 切换库；`CREATE TABLE `t` (` 开始一张表。
+// 形如 `INSERT INTO `t` VALUES (..),(..);`，表里有生成列、不可见列或用了 --complete-insert 时带列名：
+// `INSERT INTO `t` (`a`, `b`) VALUES (..);`；`USE `db`;` 切换库；`CREATE TABLE `t` (` 开始一张表。
 // 计数时按引号与反斜杠转义跟踪字符串，数顶层的左括号。整个过程是逐字节的状态机，内存与数据量无关。
 type dumpObserver struct {
-	mode  int // 0 收集行首；1 跳到行尾；2 在 INSERT 里数行
+	mode  int    // 0 收集行首；1 跳到行尾；2 在 INSERT 里数行；3 跳过列名列表，等 VALUES
+	name  string // mode 3：INSERT 的表名
+	inBT  bool   // mode 3：在反引号里
+	win   []byte // mode 3：最近读到的几个字节（找 "VALUES "）
 	line  []byte
 	inQ   byte
 	esc   bool
@@ -44,9 +48,14 @@ func (o *dumpObserver) Write(p []byte) (int, error) {
 				continue
 			}
 			o.line = append(o.line, b)
-			if b == ' ' && bytes.HasPrefix(o.line, []byte("INSERT INTO `")) && bytes.HasSuffix(o.line, []byte("` VALUES ")) {
-				o.startInsert()
-				continue
+			// 表名后面的空格：接下来是 VALUES 或列名列表
+			if b == ' ' && bytes.HasPrefix(o.line, []byte(insertPrefix)) {
+				if name, ok := backtickName(string(o.line[len(insertPrefix):])); ok && len(o.line) == len(insertPrefix)+len(quoteBT(name))+2 {
+					o.name, o.inBT, o.win = name, false, o.win[:0]
+					o.mode = 3
+					o.line = o.line[:0]
+					continue
+				}
 			}
 			if len(o.line) >= obsLineMax {
 				o.classify(false)
@@ -56,6 +65,26 @@ func (o *dumpObserver) Write(p []byte) (int, error) {
 		case 1:
 			if b == '\n' {
 				o.mode = 0
+			}
+		case 3:
+			if b == '\n' {
+				o.mode = 0
+				o.line = o.line[:0]
+				continue
+			}
+			if b == '`' {
+				o.inBT = !o.inBT // 名字里的 `` 是两次切换，结果不变
+				continue
+			}
+			if o.inBT {
+				continue
+			}
+			o.win = append(o.win, b)
+			if len(o.win) > len(valuesWord) {
+				o.win = o.win[len(o.win)-len(valuesWord):]
+			}
+			if string(o.win) == valuesWord {
+				o.startInsert(o.name)
 			}
 		case 2:
 			if o.esc {
@@ -166,13 +195,15 @@ func (o *dumpObserver) classify(complete bool) {
 	_ = complete
 }
 
-func (o *dumpObserver) startInsert() {
-	s := string(o.line)
-	name, ok := backtickName(s[len("INSERT INTO `"):])
-	if !ok {
-		o.mode = 1
-		return
-	}
+const (
+	insertPrefix = "INSERT INTO `"
+	valuesWord   = "VALUES "
+)
+
+// quoteBT 反引号里的写法（` 写成 “），不含两侧的反引号。
+func quoteBT(name string) string { return strings.ReplaceAll(name, "`", "``") }
+
+func (o *dumpObserver) startInsert(name string) {
 	// 切表时把指针换过去（Rows 累加到对应的表上）
 	o.flushRows()
 	// table() 可能让切片扩容，指针每次重新取

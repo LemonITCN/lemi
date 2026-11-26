@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/LemonITCN/lemi/lemi-service/internal/accounts"
 
 	"github.com/LemonITCN/lemi/lemi-service/internal/notify"
 	"github.com/LemonITCN/lemi/lemi-service/internal/tasks"
@@ -24,7 +25,14 @@ func init() {
 		a.Set("notify", s)
 		a.Web.AddMount(s.Routes)
 		// 安全事件（登录锁定、新设备登录、改口令、关闭两步验证）给用户本人发邮件
-		a.Auth.OnEvent = s.SecurityEvent
+		// 串在已有回调后面，不覆盖别的模块注入的处理
+		prev := a.Auth.OnEvent
+		a.Auth.OnEvent = func(ctx context.Context, kind string, u *accounts.User, ip, ua string) {
+			if prev != nil {
+				prev(ctx, kind, u, ip, ua)
+			}
+			s.SecurityEvent(ctx, kind, u, ip, ua)
+		}
 		return nil
 	}, Start: func(ctx context.Context, a *App) { a.Notify().Run(ctx) }})
 }

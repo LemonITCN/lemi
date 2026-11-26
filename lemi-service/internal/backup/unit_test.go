@@ -131,6 +131,9 @@ const sampleMysqldump = "-- MySQL dump 10.13\n" +
 	"CREATE DATABASE /*!32312 IF NOT EXISTS*/ `b2`;\n\nUSE `b2`;\n" +
 	"CREATE TABLE `t` (`x` int);\n" +
 	"INSERT INTO `t` VALUES (1);\n" +
+	// 有生成列、不可见列时 mysqldump 带列名（列名里可能有空格、括号、反引号）
+	"CREATE TABLE `items` (`id` int, `total` int GENERATED ALWAYS AS (`id` * 2) STORED);\n" +
+	"INSERT INTO `items` (`id`, `a b`, `c(d)`, `e``f`, `VALUES x`) VALUES (1,'VALUES (',2,3,4),(2,'x',3,4,5);\n" +
 	"-- Dump completed\n"
 
 func TestDumpObserver(t *testing.T) {
@@ -149,7 +152,7 @@ func TestDumpObserver(t *testing.T) {
 				got[d.Name+"."+tb.Name] = tb.Rows
 			}
 		}
-		want := map[string]int64{"app.users": 6, "app.we`ird": 2, "app.empty": 0, "b2.t": 1}
+		want := map[string]int64{"app.users": 6, "app.we`ird": 2, "app.empty": 0, "b2.items": 2, "b2.t": 1}
 		b1, _ := json.Marshal(got)
 		b2, _ := json.Marshal(want)
 		if string(b1) != string(b2) {

@@ -134,6 +134,9 @@ func (s *Service) RunView(ctx context.Context, r *Run, withFiles bool) map[strin
 	var manifest, verify any
 	_ = json.Unmarshal([]byte(r.Manifest), &manifest)
 	_ = json.Unmarshal([]byte(r.VerifyDetail), &verify)
+	if m, ok := verify.(map[string]any); !ok || len(m) == 0 || r.VerifyStatus == "" || r.VerifyStatus == "running" {
+		verify = nil // 还没校验过（或正在校验）时没有结果，界面不显示校验结果框
+	}
 	out := map[string]any{
 		"id": r.ID, "workspace_id": r.WorkspaceID, "plan_id": r.PlanID, "plan_name": r.PlanName, "connection_id": r.ConnectionID,
 		"connection_name": r.ConnectionName, "driver": r.Driver, "trigger": r.Trigger, "attempt": r.Attempt, "status": r.Status,
