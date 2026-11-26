@@ -201,7 +201,7 @@ func (s *Service) Send(ctx context.Context, wsID string, channelIDs []string, ev
 		}
 		for i := range list {
 			ch := &list[i]
-			if !ch.Enabled {
+			if !ch.Enabled || !ch.Wants(ev.Kind) {
 				continue
 			}
 			s.wg.Add(1)

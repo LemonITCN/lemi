@@ -28,6 +28,7 @@ type Channel struct {
 	Kind        string `db:"kind" json:"kind"`
 	Config      string `db:"config" json:"-"`
 	Enabled     bool   `db:"enabled" json:"enabled"`
+	Events      string `db:"events" json:"-"` // 订阅的事件（JSON 数组，空 = 全部）
 	CreatedBy   string `db:"created_by" json:"created_by"`
 	CreatedAt   int64  `db:"created_at" json:"created_at"`
 	UpdatedAt   int64  `db:"updated_at" json:"updated_at"`
@@ -43,6 +44,55 @@ type Input struct {
 	Config  map[string]any `json:"config"`
 	// Clear 要清除的可选密钥字段（密钥只写不读，「不传」表示保持原值，所以清除要显式说明）。
 	Clear []string `json:"clear"`
+	// Events 订阅的事件（空 = 全部）；修改时不传表示保持原值。
+	Events *[]string `json:"events"`
+}
+
+// EventList 渠道订阅的事件（空 = 全部）。
+func (c *Channel) EventList() []string {
+	var out []string
+	_ = json.Unmarshal([]byte(c.Events), &out)
+	if out == nil {
+		out = []string{}
+	}
+	return out
+}
+
+// Wants 渠道是否接收这种事件（测试消息总是接收）。
+func (c *Channel) Wants(kind string) bool {
+	list := c.EventList()
+	if len(list) == 0 || kind == EvTest {
+		return true
+	}
+	for _, k := range list {
+		if k == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanEvents 校验事件订阅。
+func cleanEvents(in []string) (string, error) {
+	known := map[string]bool{}
+	for _, e := range eventList {
+		known[e.ID] = true
+	}
+	out := []string{}
+	seen := map[string]bool{}
+	for _, e := range in {
+		e = strings.TrimSpace(e)
+		if e == "" || seen[e] {
+			continue
+		}
+		if !known[e] || e == EvTest {
+			return "", apperr.Bad("未知的事件 %q", e)
+		}
+		seen[e] = true
+		out = append(out, e)
+	}
+	b, _ := json.Marshal(out)
+	return string(b), nil
 }
 
 // Get 取渠道。
@@ -84,9 +134,15 @@ func (s *Service) Create(ctx context.Context, wsID, userID string, in *Input) (*
 	if err != nil {
 		return nil, err
 	}
+	events := "[]"
+	if in.Events != nil {
+		if events, err = cleanEvents(*in.Events); err != nil {
+			return nil, err
+		}
+	}
 	now := store.Now()
 	c := &Channel{ID: id, WorkspaceID: wsID, Name: in.Name, Kind: in.Kind, Config: cfg, Enabled: in.Enabled == nil || *in.Enabled,
-		CreatedBy: userID, CreatedAt: now, UpdatedAt: now}
+		Events: events, CreatedBy: userID, CreatedAt: now, UpdatedAt: now}
 	if err := s.st.Add(ctx, channelsTable, c); err != nil {
 		return nil, err
 	}
@@ -98,6 +154,13 @@ func (s *Service) Update(ctx context.Context, c *Channel, in *Input) error {
 	cfg, err := s.prepare(ctx, c.ID, in, c)
 	if err != nil {
 		return err
+	}
+	if in.Events != nil {
+		ev, err := cleanEvents(*in.Events)
+		if err != nil {
+			return err
+		}
+		c.Events = ev
 	}
 	c.Name, c.Kind, c.Config = in.Name, in.Kind, cfg
 	if in.Enabled != nil {
@@ -116,7 +179,7 @@ func (s *Service) Delete(ctx context.Context, c *Channel) error {
 // View 给前端的渠道描述：密钥只给「是否已设置」（secrets_set），完整配置只给空间管理员。
 func (s *Service) View(c *Channel, full bool) map[string]any {
 	out := map[string]any{"id": c.ID, "workspace_id": c.WorkspaceID, "name": c.Name, "kind": c.Kind, "enabled": c.Enabled,
-		"created_by": c.CreatedBy, "created_at": c.CreatedAt, "updated_at": c.UpdatedAt}
+		"events": c.EventList(), "created_by": c.CreatedBy, "created_at": c.CreatedAt, "updated_at": c.UpdatedAt}
 	if !full {
 		return out
 	}
