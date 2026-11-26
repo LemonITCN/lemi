@@ -94,14 +94,16 @@ function lastOf(key: keyof Sample): number | null {
 const fmtRate = (v: number) => formatCompact(v)
 const fmtPct = (v: number) => v.toFixed(v >= 99.95 || v < 10 ? 1 : 2) + '%'
 const fmtInt = (v: number) => formatCompact(v, 0)
+/** 坐标轴刻度：小于 10 的小数保留到能区分相邻刻度的位数（0.05 / 0.1 / 0.15），避免出现两个「0.2」。 */
+const fmtAxis = (v: number) => (Math.abs(v) < 10 && v % 1 ? String(Math.round(v * 1000) / 1000) : formatCompact(v))
 
 interface Card { key: string; title: string; tip?: string; series: MetricSeries[]; values: { name: string; slot: 1 | 2; value: string }[]; format: (v: number) => string; axisFormat?: (v: number) => string; min?: number; max?: number }
 
 const cards = computed<Card[]>(() => {
   const show = (v: number | null, f: (n: number) => string) => (v === null ? '—' : f(v))
   return [
-    { key: 'qps', title: t('monitor.qps'), tip: t('monitor.qpsTip'), series: [series('qps', 'QPS')], values: [{ name: 'QPS', slot: 1, value: show(lastOf('qps'), fmtRate) }], format: fmtRate, min: 0 },
-    { key: 'tps', title: t('monitor.tps'), tip: t('monitor.tpsTip'), series: [series('tps', 'TPS')], values: [{ name: 'TPS', slot: 1, value: show(lastOf('tps'), fmtRate) }], format: fmtRate, min: 0 },
+    { key: 'qps', title: t('monitor.qps'), tip: t('monitor.qpsTip'), series: [series('qps', 'QPS')], values: [{ name: 'QPS', slot: 1, value: show(lastOf('qps'), fmtRate) }], format: fmtRate, axisFormat: fmtAxis, min: 0 },
+    { key: 'tps', title: t('monitor.tps'), tip: t('monitor.tpsTip'), series: [series('tps', 'TPS')], values: [{ name: 'TPS', slot: 1, value: show(lastOf('tps'), fmtRate) }], format: fmtRate, axisFormat: fmtAxis, min: 0 },
     {
       key: 'conn', title: t('monitor.connections'), series: [series('conn', t('monitor.connected'), 1), series('running', t('monitor.running'), 2)],
       values: [{ name: t('monitor.connected'), slot: 1, value: show(lastOf('conn'), fmtInt) }, { name: t('monitor.running'), slot: 2, value: show(lastOf('running'), fmtInt) }],

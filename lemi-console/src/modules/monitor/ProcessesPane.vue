@@ -120,7 +120,9 @@ function toggle(p: Proc) {
 
 function timeClass(p: Proc) {
   const s = num(p.time)
-  if (String(p.command || '').toLowerCase() === 'sleep') return ''
+  // 空闲连接与后台线程（事件调度器、复制线程）的「耗时」只是存活时长，不算慢
+  const cmd = String(p.command || '').toLowerCase()
+  if (cmd === 'sleep' || cmd === 'daemon' || cmd.startsWith('binlog dump') || cmd === 'connect') return ''
   return s >= 30 ? 'slow' : s >= 5 ? 'warm' : ''
 }
 </script>

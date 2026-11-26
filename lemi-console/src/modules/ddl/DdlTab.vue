@@ -28,6 +28,9 @@ const kind = computed(() => String(props.tab.params.kind || 'table'))
 const name = computed(() => String(props.tab.params.name || ''))
 const dialect = computed(() => dialectOf(conn.value))
 
+// 对象树双击例程等直接打开时标题只有对象名：补上「· DDL」，和数据标签区分开
+if (name.value && props.tab.title === name.value) useTabs().update(props.tab.id, { title: `${name.value} · DDL` })
+
 const ddl = ref('')
 const loading = ref(false)
 const error = ref('')

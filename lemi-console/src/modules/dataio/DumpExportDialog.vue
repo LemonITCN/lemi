@@ -148,4 +148,5 @@ async function run() {
 .opts { display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
 .row > span { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 760px) { .obj { height: 36px; } .objs { max-height: 40vh; } }
 </style>
