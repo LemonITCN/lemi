@@ -1,0 +1,21 @@
+# 构建上下文是仓库根目录（docker build -f docker/Dockerfile .）。只排除不需要的与绝不能进镜像的文件。
+.git
+.github
+.claude
+.secrets
+.env
+.env.*
+*.local
+**/.DS_Store
+**/node_modules
+dist
+lemi-console/dist
+lemi-service/bin
+lemi-service/internal/web/dist/*
+!lemi-service/internal/web/dist/.keep
+**/*.test
+**/*.out
+**/coverage.*
+docker/.env
+docker/secrets
+docker/certs

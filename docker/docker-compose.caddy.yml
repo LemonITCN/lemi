@@ -1,0 +1,74 @@
+# Lemi + Caddy 反向代理（自动申请并续期 HTTPS 证书）。适合直接放在公网的服务器。
+#
+# 准备：
+#   1. 域名（例如 lemi.example.com）解析到本机公网 IP；防火墙放行 80、443（TCP）与 443（UDP，HTTP/3）
+#   2. 在本文件所在目录建 .env：
+#        LEMI_DOMAIN=lemi.example.com
+# 启动：
+#   docker compose -f docker-compose.caddy.yml up -d
+#   docker compose -f docker-compose.caddy.yml logs lemi | grep -A3 初始化令牌
+#   浏览器打开 https://lemi.example.com
+#
+# Lemi 不对外暴露端口，只有 Caddy 能访问它；LEMI_TRUSTED_PROXIES 设成 Caddy 所在的专用网段，
+# Lemi 才会采信 Caddy 传来的客户端真实 IP 与 HTTPS 标记（登录限速、审计、Cookie Secure 都依赖它）。
+# 其余配置项与 docker-compose.yml 相同，需要时照抄过来。
+
+name: lemi
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      LEMI_DOMAIN: ${LEMI_DOMAIN:?请在 .env 里设置 LEMI_DOMAIN（你的域名）}
+    networks:
+      - lemi-proxy
+    depends_on:
+      - lemi
+
+  lemi:
+    image: ghcr.io/lemonitcn/lemi:${LEMI_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # 不映射端口：只经 Caddy 访问
+    volumes:
+      - lemi-data:/data
+    environment:
+      LEMI_LISTEN: 0.0.0.0:7700
+      LEMI_PUBLIC_URL: https://${LEMI_DOMAIN:?请在 .env 里设置 LEMI_DOMAIN（你的域名）}
+      # Caddy 所在网段（与下面 networks 的 subnet 一致）
+      LEMI_TRUSTED_PROXIES: 172.30.77.0/24
+      LEMI_TLS_MODE: "off"
+      LEMI_LOG_LEVEL: ${LEMI_LOG_LEVEL:-info}
+      LEMI_UPDATE_CHECK: ${LEMI_UPDATE_CHECK:-true}
+      LEMI_TZ: ${LEMI_TZ:-Asia/Shanghai}
+      TZ: ${LEMI_TZ:-Asia/Shanghai}
+      # 初始管理员、主密钥、模型密钥等口令类配置用 Docker secrets 传入，写法见 docker-compose.yml
+    networks:
+      - lemi-proxy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+networks:
+  lemi-proxy:
+    ipam:
+      config:
+        - subnet: 172.30.77.0/24
+
+volumes:
+  lemi-data:
+  caddy-data:
+  caddy-config:

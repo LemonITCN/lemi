@@ -1,0 +1,142 @@
+# Lemi：Web 数据库管理 + 定时备份 + AI 智能体。
+#
+# 快速开始（在本文件所在目录）：
+#   docker compose up -d
+#   docker compose logs lemi | grep -A3 初始化令牌      # 首次启动打印一次性初始化令牌
+#   浏览器打开 http://<服务器 IP>:7700，填令牌创建管理员，首次登录强制绑定两步验证
+#
+# 配置方式：下面每一项都是环境变量，值写成 ${变量:-默认值}，不用改本文件，
+# 在同目录建一个 .env 文件写「变量=值」即可覆盖（.env 不要提交到 git）。
+# 口令、密钥不要写在本文件或 .env 里，用文件下面「Docker secrets」一节的方式传入。
+#
+# 公网部署：不要把 7700 端口以 HTTP 直接暴露在公网。三种做法任选其一：
+#   1. 反向代理自动 HTTPS：用 docker-compose.caddy.yml（Caddy 自动申请证书，推荐）
+#   2. Lemi 自己申请证书：LEMI_TLS_MODE=acme，端口改成 443 与 80（见下方 TLS 一节）
+#   3. 自己的证书：LEMI_TLS_MODE=manual，把证书目录挂进容器
+# 升级：docker compose pull && docker compose up -d（容器里不做在线自升级，界面只提示有新版本）。
+
+name: lemi
+
+services:
+  lemi:
+    image: ghcr.io/lemonitcn/lemi:${LEMI_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      # 只给本机或反向代理访问时改成 "127.0.0.1:7700:7700"
+      - "${LEMI_PORT:-7700}:7700"
+      # acme 模式（Lemi 自己申请证书）时改成下面两行，并删掉上面一行：
+      # - "443:443"
+      # - "80:80"
+    volumes:
+      # 数据目录 = 全部数据（元数据库、主密钥、上传的 SQLite、本地备份），备份这个卷即可完整恢复
+      - lemi-data:/data
+      # 允许 Lemi 打开的服务器上的 SQLite 文件所在目录（配合 LEMI_SQLITE_DIRS），只读挂载更安全：
+      # - /srv/sqlite:/sqlite:ro
+      # manual 模式的证书目录（配合 LEMI_TLS_CERT / LEMI_TLS_KEY）：
+      # - ./certs:/certs:ro
+    environment:
+      # ---------------- 监听与地址 ----------------
+      # 容器内监听地址。acme 模式改成 0.0.0.0:443
+      LEMI_LISTEN: ${LEMI_LISTEN:-0.0.0.0:7700}
+      # 对外访问地址，例如 https://lemi.example.com（通知、分享链接、MCP 授权里用；空时按请求推断）
+      LEMI_PUBLIC_URL: ${LEMI_PUBLIC_URL:-}
+      # 受信任的反向代理 IP / 网段（逗号分隔）。只信任它们传来的 X-Forwarded-For / X-Forwarded-Proto；
+      # 没有反向代理时留空，否则别人可以伪造来源 IP 绕过登录限速
+      LEMI_TRUSTED_PROXIES: ${LEMI_TRUSTED_PROXIES:-}
+
+      # ---------------- TLS（三选一：off / manual / acme）----------------
+      # off：Lemi 只说 HTTP，由前面的反向代理负责 HTTPS（或只在内网使用）
+      # manual：用自己的证书，需同时设置 LEMI_TLS_CERT 与 LEMI_TLS_KEY（容器内路径，挂载 ./certs）
+      # acme：Lemi 自动向 Let's Encrypt 申请证书，需要域名解析到本机、80 与 443 端口可从公网访问
+      LEMI_TLS_MODE: ${LEMI_TLS_MODE:-off}
+      LEMI_TLS_CERT: ${LEMI_TLS_CERT:-}            # 例如 /certs/fullchain.pem
+      LEMI_TLS_KEY: ${LEMI_TLS_KEY:-}              # 例如 /certs/privkey.pem
+      LEMI_ACME_DOMAINS: ${LEMI_ACME_DOMAINS:-}    # acme 模式的域名，逗号分隔，例如 lemi.example.com
+      LEMI_ACME_EMAIL: ${LEMI_ACME_EMAIL:-}        # 证书到期提醒邮箱
+      LEMI_HTTP_REDIRECT: ${LEMI_HTTP_REDIRECT:-}  # acme 模式的 HTTP 跳转与证书验证端口，默认 :80
+
+      # ---------------- 首次启动 ----------------
+      # 不设置管理员时，首次启动在日志里打印一次性初始化令牌（同时写进 /data/setup-token），
+      # 打开网页填令牌创建管理员——防止服务暴露在公网时被人抢先注册。
+      # 想直接创建管理员：设置用户名，口令用下面 secrets 一节的 LEMI_ADMIN_PASSWORD_FILE 传入（至少 10 位）。
+      # 首次登录仍强制绑定两步验证。以下「首次启动」类变量只在数据库里还没有对应设置时写入一次，之后以界面为准。
+      LEMI_ADMIN_USERNAME: ${LEMI_ADMIN_USERNAME:-}
+      LEMI_ADMIN_EMAIL: ${LEMI_ADMIN_EMAIL:-}
+      # 首次启动创建的工作空间名（默认「默认空间」）
+      LEMI_WORKSPACE_NAME: ${LEMI_WORKSPACE_NAME:-}
+      # AI：默认模型（OpenCode Go 的模型 ID）。密钥用 secrets 一节的 LEMI_OPENCODE_API_KEY_FILE 传入
+      LEMI_LLM_DEFAULT_MODEL: ${LEMI_LLM_DEFAULT_MODEL:-}
+      # 系统邮件服务器（找回口令、通知）。口令用 secrets 一节的 LEMI_SMTP_PASSWORD_FILE 传入
+      LEMI_SMTP_HOST: ${LEMI_SMTP_HOST:-}
+      LEMI_SMTP_PORT: ${LEMI_SMTP_PORT:-}          # 465（SSL）或 587（STARTTLS）
+      LEMI_SMTP_USERNAME: ${LEMI_SMTP_USERNAME:-}
+      LEMI_SMTP_FROM: ${LEMI_SMTP_FROM:-}          # 发件人，例如 Lemi <lemi@example.com>
+      LEMI_SMTP_TLS: ${LEMI_SMTP_TLS:-}            # ssl / starttls
+
+      # ---------------- 其他 ----------------
+      # 允许打开的服务器 SQLite 目录（容器内路径，多个用冒号分隔），要与上面 volumes 的挂载对应，例如 /sqlite
+      LEMI_SQLITE_DIRS: ${LEMI_SQLITE_DIRS:-}
+      # mysqldump 工具包下载地址前缀（镜像里已预装常用版本；以后换 CDN 只改这里）
+      LEMI_TOOLS_BASE_URL: ${LEMI_TOOLS_BASE_URL:-}
+      # 日志级别：debug / info / warn / error
+      LEMI_LOG_LEVEL: ${LEMI_LOG_LEVEL:-info}
+      # 每天检查一次新版本（容器里只在界面提示，不自升级）
+      LEMI_UPDATE_CHECK: ${LEMI_UPDATE_CHECK:-true}
+      # 计划任务（备份、定时智能体任务）的时区；TZ 让日志时间也用这个时区
+      LEMI_TZ: ${LEMI_TZ:-Asia/Shanghai}
+      TZ: ${LEMI_TZ:-Asia/Shanghai}
+
+      # ---------------- 主密钥 ----------------
+      # 主密钥加密连接口令、云存储密钥、模型密钥、两步验证密钥。
+      # 默认：首次启动自动生成在数据卷里（/data/master.key，0600）。简单，但拿到数据卷备份的人同时拿到了密钥。
+      # 更安全：用 LEMI_MASTER_KEY_FILE 从容器外传入（见 secrets 一节），数据卷里就不存密钥；
+      #   主密钥一旦丢失，加密保存的口令与密钥都无法解开，务必另外妥善备份。
+      #   已经运行过的实例改用外置主密钥时，不要重新生成：把 /data/master.key 的内容（本身就是 base64）原样存为
+      #   secrets/master_key.txt，确认能正常启动后再删掉卷里的 master.key。
+
+      # ---------------- Docker secrets：口令与密钥从文件读取 ----------------
+      # Lemi 支持在变量名后加 _FILE 从文件读取（LEMI_MASTER_KEY、LEMI_ADMIN_PASSWORD、LEMI_OPENCODE_API_KEY、
+      # LEMI_SMTP_USERNAME、LEMI_SMTP_PASSWORD 等）。准备文件（在本文件所在目录执行）：
+      #   mkdir -p secrets
+      #   openssl rand -base64 24 | tr -d '\n' > secrets/admin_password.txt   # 初始管理员口令（强随机，记下来）
+      #   openssl rand -base64 32 | tr -d '\n' > secrets/master_key.txt       # 主密钥（32 字节 base64），另外备份
+      #   printf '%s' '你的 OpenCode Go 密钥' > secrets/opencode_api_key.txt
+      #   printf '%s' '邮箱授权码' > secrets/smtp_password.txt
+      #   sudo chown -R 10001:10001 secrets && sudo chmod 700 secrets && sudo chmod 400 secrets/*   # 容器以 uid 10001 运行
+      # 再取消下面对应行与文件末尾 secrets: 一节的注释：
+      # LEMI_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # LEMI_MASTER_KEY_FILE: /run/secrets/master_key
+      # LEMI_OPENCODE_API_KEY_FILE: /run/secrets/opencode_api_key
+      # LEMI_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+    # secrets:
+    #   - admin_password
+    #   - master_key
+    #   - opencode_api_key
+    #   - smtp_password
+    # 只有 /data 可写，其他文件系统只读；不需要任何 Linux 特权
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+volumes:
+  lemi-data:
+
+# secrets:
+#   admin_password:
+#     file: ./secrets/admin_password.txt
+#   master_key:
+#     file: ./secrets/master_key.txt
+#   opencode_api_key:
+#     file: ./secrets/opencode_api_key.txt
+#   smtp_password:
+#     file: ./secrets/smtp_password.txt

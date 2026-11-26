@@ -83,6 +83,8 @@ lemi/
 
 「首次启动写入」类变量只在对应项为空时写入数据库，之后以界面上的设置为准，避免重启覆盖用户的修改。
 
+口令类变量（LEMI_MASTER_KEY、LEMI_ADMIN_USERNAME、LEMI_ADMIN_PASSWORD、LEMI_ADMIN_EMAIL、LEMI_OPENCODE_API_KEY、LEMI_SMTP_USERNAME、LEMI_SMTP_PASSWORD）都可以改用 `<变量>_FILE` 指向一个文件（Docker secrets 的惯例，去掉末尾换行），两者同时设置时报错。由命令层（cmd/lemi/envfile.go）在读取配置之前处理。
+
 ### 3.3 命令行
 
 ```
@@ -93,6 +95,7 @@ lemi admin unlock <用户名|IP>                   解除登录锁定
 lemi service install|uninstall|start|stop|status [--data DIR] [--listen ADDR]
                                                装成 systemd / launchd / Windows 服务
 lemi update [--check]                          检查并升级到最新正式版（校验发布签名）
+lemi healthcheck [--timeout 5s]                请求本机 /healthz（Docker HEALTHCHECK 用；按 LEMI_LISTEN 选地址，TLS 时只连本机并跳过证书校验）
 lemi backup-file decrypt|to-sql <备份文件> [-o 输出]   离线解密 / 解压备份为 .sql（需要备份密码）
 lemi version
 ```
@@ -461,6 +464,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 - 版本：8.0（服务于 5.7 与 8.0 服务器）、8.4 LTS、9.x 最新。服务器版本 → 客户端版本映射写在清单里。
 - 清单 `lemi-service/internal/dumptools/manifest.json`（随代码发布）：每个 版本 × 平台 的文件名与 SHA-256。Lemi 下载 `<LEMI_TOOLS_BASE_URL>/<文件名>`，校验 SHA-256 后解压到 `<数据目录>/tools/mysql-<版本>/`。校验失败删除并报错。
 - 也可以在设置里指定服务器上已安装的 mysqldump 路径（Lemi 读取其版本号）。Docker 镜像内预装。
+- Docker 预装位置：`/data/tools` 会被数据卷覆盖，所以镜像构建时（docker/fetch-mysql-tools.sh，按本清单下载并校验 SHA-256）装在 `/opt/lemi/tools/mysql-<版本>/linux-<架构>/`（归档只有一个顶层目录时去掉这一层），镜像设置环境变量 `LEMI_TOOLS_PREINSTALLED=/opt/lemi/tools`。dumptools 查找某个版本时，先查 `$LEMI_TOOLS_PREINSTALLED/mysql-<版本>/<系统>-<架构>/`（只读，不下载、不删除），没有再查 `<数据目录>/tools/mysql-<版本>/`，都没有才下载。
 
 ## 14. 健康检查
 
@@ -589,6 +593,10 @@ workspace_* 只在用户的浏览器在线时提供；定时任务与 MCP 没有
   - Docker 镜像 `ghcr.io/lemonitcn/lemi:<版本>` 与 `latest`（linux/amd64、linux/arm64，预装对应版本 mysqldump/mysql），仓库首页提供 docker-compose.yml。
 - 纯 Go、关闭 CGO（SQLite 用 modernc），单文件内嵌前端。
 - 在线升级：每天检查 GitHub 最新正式版，实例管理员一键升级（下载对应平台包 → 校验签名与 SHA-256 → 替换可执行文件 → 由服务管理器或自身重启）；Docker 部署只提示，不自升级。
+  - 签名：`SHA256SUMS.sig` = Ed25519(私钥, SHA256SUMS 原始字节) 的标准 base64。清单里必须有「最新版本号」对应的包名（防止拿旧版本的真清单冒充新版本），不接受降级与同版本重装；替换前运行新程序的 `version` 确认版本号。签名工具 `go run ./internal/selfupdate/releasesign`（keygen / sign / verify / pubkey），sign 时私钥必须与内置公钥匹配。
+  - 替换：同目录临时文件原子改名；Windows 运行中的 exe 先改名为 `.old`，新进程启动后清理。
+  - 重启：Unix（前台或 systemd / launchd）给自己发 SIGTERM 正常退出后 execve 原地换成新程序（进程号不变）；Windows 前台正常退出后以相同参数启动新进程；Windows 服务拉起独立的 `lemi service restart` 进程经服务控制管理器停止再启动。
+  - 接口：`GET /api/v1/admin/update`（当前 / 最新版本、发布说明、能否自动升级及原因、升级任务状态，`?refresh=1` 立即检查，最短间隔 1 分钟）、`POST /api/v1/admin/update`（实例管理员、需 re-auth、记审计 `system.update.start` / `system.update`，后台执行，返回 202，结果经 WebSocket `notice` 推送）；bootstrap 给实例管理员附带 `update: {version, url, can_auto_update}`。
 
 ## 21. 测试
 
