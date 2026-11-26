@@ -1,1 +1,77 @@
-{"versions":[]}
+{
+  "versions": [
+    {
+      "version": "8.0.46",
+      "series": "8.0",
+      "tag": "tools-mysql-8.0.46",
+      "files": {
+        "linux-amd64": {
+          "name": "mysql-client-8.0.46-linux-amd64.tar.gz",
+          "sha256": "549869a853c80551cf5d4597726ecf91ba3d2e49f1c42bc672d9486c8f925aa4"
+        },
+        "linux-arm64": {
+          "name": "mysql-client-8.0.46-linux-arm64.tar.gz",
+          "sha256": "3d2389619766ffcce65281bc09d8c75f08b8d06474f53fb5f8576f287b833bc3"
+        },
+        "darwin-arm64": {
+          "name": "mysql-client-8.0.46-darwin-arm64.tar.gz",
+          "sha256": "95dc354fa0b637130a66e89832790fc2fa4d11b8900637fe86f1bd1aee777dc1"
+        },
+        "darwin-amd64": {
+          "name": "mysql-client-8.0.46-darwin-amd64.tar.gz",
+          "sha256": "90117175681c4dce71b5ef15be0b446f37ebde482652e85af4a4b92d5ff4de4a"
+        },
+        "windows-amd64": {
+          "name": "mysql-client-8.0.46-windows-amd64.zip",
+          "sha256": "e8bc2b2dd09b56d088e85fb8ddb6ef23eb2cec7482c540b21a22fcb7e7498d26"
+        }
+      }
+    },
+    {
+      "version": "8.4.13.1",
+      "series": "8.4",
+      "tag": "tools-mysql-8.4.13.1",
+      "files": {
+        "linux-amd64": {
+          "name": "mysql-client-8.4.13.1-linux-amd64.tar.gz",
+          "sha256": "fcacff58458bf39970ee09def68eb21799eb730bb94e15f80b6f5b624d881623"
+        },
+        "linux-arm64": {
+          "name": "mysql-client-8.4.13.1-linux-arm64.tar.gz",
+          "sha256": "96ceb4af6d41276b6be6789c3e39a8e810d43780876bcd9a03f662748d7b12c7"
+        },
+        "darwin-arm64": {
+          "name": "mysql-client-8.4.13.1-darwin-arm64.tar.gz",
+          "sha256": "02f9b8f2ba515d26ae9cc56c3dcb92a32469f6b8e971d2ddebec0fda96f50958"
+        },
+        "windows-amd64": {
+          "name": "mysql-client-8.4.13.1-windows-amd64.zip",
+          "sha256": "f4ebe49dcfe158e3150cb40d14ec591abddc9673d30408177f0e4cd4ddf3b01e"
+        }
+      }
+    },
+    {
+      "version": "9.7.4.1",
+      "series": "9.7",
+      "tag": "tools-mysql-9.7.4.1",
+      "files": {
+        "linux-amd64": {
+          "name": "mysql-client-9.7.4.1-linux-amd64.tar.gz",
+          "sha256": "17e260297dcea2edbcb849059b90eb67405555182517dda571082a70f0980cbe"
+        },
+        "linux-arm64": {
+          "name": "mysql-client-9.7.4.1-linux-arm64.tar.gz",
+          "sha256": "d836d4258eb90cb160674656001f7e390a5d6b54e232281c669efe8eba616174"
+        },
+        "darwin-arm64": {
+          "name": "mysql-client-9.7.4.1-darwin-arm64.tar.gz",
+          "sha256": "841c2ece63a2c7df37b073716bd13323494f666fb24c889ec51317b7b729e983"
+        },
+        "windows-amd64": {
+          "name": "mysql-client-9.7.4.1-windows-amd64.zip",
+          "sha256": "8ac09c63443a6967504e5c969ba3526e94502efc32c9b8a3fb1264cace1e1634"
+        }
+      }
+    }
+  ]
+}

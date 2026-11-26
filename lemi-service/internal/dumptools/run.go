@@ -336,5 +336,10 @@ func clientErr(name string, err error, stderr string) error {
 	if len(lines) == 0 {
 		return fmt.Errorf("%s 运行失败：%v", name, err)
 	}
-	return fmt.Errorf("%s 运行失败：%s", name, strings.Join(lines, "；"))
+	msg := fmt.Sprintf("%s 运行失败：%s", name, strings.Join(lines, "；"))
+	// 官方客户端依赖系统的 ncurses（不随包打包，见 docs/spec.md §13）
+	if strings.Contains(stderr, "libncurses") || strings.Contains(stderr, "libtinfo") {
+		msg += "。缺少系统库 ncurses：Debian / Ubuntu 执行 apt install libncurses6，RHEL / Rocky / Alma 执行 dnf install ncurses-libs；也可以改用 Lemi 自带的导出器备份"
+	}
+	return errors.New(msg)
 }

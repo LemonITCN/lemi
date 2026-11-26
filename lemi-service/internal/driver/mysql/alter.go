@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,9 @@ func (c *Conn) AlterSQL(ctx context.Context, db string, old *driver.TableInfo, n
 		if err := checkType(col.Type); err != nil {
 			return nil, fmt.Errorf("列 %s：%w", col.Name, err)
 		}
+		if err := checkColumnExtras(col); err != nil {
+			return nil, fmt.Errorf("列 %s：%w", col.Name, err)
+		}
 	}
 	tbl := QuoteIdent(db) + "." + QuoteIdent(next.Name)
 	if old == nil {
@@ -47,6 +51,12 @@ func (c *Conn) AlterSQL(ctx context.Context, db string, old *driver.TableInfo, n
 		pos := " FIRST"
 		if i > 0 {
 			pos = " AFTER " + QuoteIdent(prev)
+		}
+		if col.OrigName != "" && col.Generated == "" && col.GenerationExpr == "" {
+			// 设计器不编辑生成列；只是挪位置、改注释时也要把生成表达式原样带上
+			if oc, ok := oldCols[col.OrigName]; ok && oc.Generated != "" {
+				col.Generated, col.GenerationExpr = oc.Generated, oc.GenerationExpr
+			}
 		}
 		def := columnDef(col)
 		if col.OrigName == "" {
@@ -239,7 +249,93 @@ func columnChanged(o driver.ColumnInfo, n driver.ColumnDesign) bool {
 	if n.Collation != "" && !strings.EqualFold(n.Collation, o.Collation) {
 		return true
 	}
+	if normOnUpdate(o.OnUpdate) != normOnUpdate(n.OnUpdate) || o.Invisible != n.Invisible {
+		return true
+	}
+	if o.Generated != "" || n.Generated != "" {
+		if !strings.EqualFold(o.Generated, n.Generated) || strings.TrimSpace(o.GenerationExpr) != strings.TrimSpace(n.GenerationExpr) {
+			return true
+		}
+	}
 	return false
+}
+
+// normOnUpdate 比较用：大小写与「current_timestamp()」这种空括号写法不算变化。
+func normOnUpdate(s string) string {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	s = strings.TrimSuffix(s, "()")
+	if s == "NOW" || s == "LOCALTIME" || s == "LOCALTIMESTAMP" {
+		s = "CURRENT_TIMESTAMP"
+	}
+	return s
+}
+
+var onUpdateRe = regexp.MustCompile(`(?i)^(CURRENT_TIMESTAMP|NOW|LOCALTIME|LOCALTIMESTAMP)(\(\s*[0-6]?\s*\))?$`)
+
+// checkColumnExtras 校验 ON UPDATE 与生成列表达式（表达式不能带分号、注释或不成对的括号与引号，防止拼出额外语句）。
+func checkColumnExtras(c driver.ColumnDesign) error {
+	if u := strings.TrimSpace(c.OnUpdate); u != "" && !onUpdateRe.MatchString(u) {
+		return fmt.Errorf("ON UPDATE 只支持 CURRENT_TIMESTAMP（可带精度），不支持 %q", u)
+	}
+	switch strings.ToLower(c.Generated) {
+	case "":
+		if strings.TrimSpace(c.GenerationExpr) != "" {
+			return errors.New("生成列要选择 VIRTUAL 或 STORED")
+		}
+		return nil
+	case "virtual", "stored":
+	default:
+		return fmt.Errorf("生成列只能是 VIRTUAL 或 STORED，不是 %q", c.Generated)
+	}
+	if strings.TrimSpace(c.GenerationExpr) == "" {
+		return errors.New("生成列要填写表达式")
+	}
+	return checkExpr(c.GenerationExpr)
+}
+
+func checkExpr(e string) error {
+	depth := 0
+	var q byte
+	for i := 0; i < len(e); i++ {
+		ch := e[i]
+		if q != 0 {
+			switch {
+			case ch == '\\' && q != '`':
+				i++
+			case ch == q && i+1 < len(e) && e[i+1] == q:
+				i++
+			case ch == q:
+				q = 0
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"', '`':
+			q = ch
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth < 0 {
+				return errors.New("表达式里的括号不成对")
+			}
+		case ';':
+			return errors.New("表达式里不能有分号")
+		case '#':
+			return errors.New("表达式里不能有注释")
+		case '-', '/':
+			if i+1 < len(e) && ((ch == '-' && e[i+1] == '-') || (ch == '/' && e[i+1] == '*')) {
+				return errors.New("表达式里不能有注释")
+			}
+		}
+	}
+	if q != 0 {
+		return errors.New("表达式里的引号不成对")
+	}
+	if depth != 0 {
+		return errors.New("表达式里的括号不成对")
+	}
+	return nil
 }
 
 // checkType 列类型只允许类型名、括号、数字、逗号、引号枚举值与 unsigned/zerofill 等修饰，防止注入额外语句。
@@ -292,6 +388,22 @@ func columnDef(c driver.ColumnDesign) string {
 		}
 		b.WriteString(" CHARACTER SET " + safeWord(cs) + " COLLATE " + safeWord(c.Collation))
 	}
+	if g := strings.ToUpper(c.Generated); g == "VIRTUAL" || g == "STORED" {
+		// 生成列：GENERATED ALWAYS AS (表达式) VIRTUAL|STORED，不能有默认值与自增
+		b.WriteString(" GENERATED ALWAYS AS (" + strings.TrimSpace(c.GenerationExpr) + ") " + g)
+		if c.Nullable {
+			b.WriteString(" NULL")
+		} else {
+			b.WriteString(" NOT NULL")
+		}
+		if c.Invisible {
+			b.WriteString(" INVISIBLE")
+		}
+		if c.Comment != "" {
+			b.WriteString(" COMMENT " + QuoteString(c.Comment))
+		}
+		return b.String()
+	}
 	if c.Nullable {
 		b.WriteString(" NULL")
 	} else {
@@ -308,8 +420,14 @@ func columnDef(c driver.ColumnDesign) string {
 			b.WriteString(" DEFAULT " + QuoteString(d))
 		}
 	}
+	if u := strings.TrimSpace(c.OnUpdate); u != "" {
+		b.WriteString(" ON UPDATE " + strings.ToUpper(u))
+	}
 	if c.AutoIncrement {
 		b.WriteString(" AUTO_INCREMENT")
+	}
+	if c.Invisible {
+		b.WriteString(" INVISIBLE")
 	}
 	if c.Comment != "" {
 		b.WriteString(" COMMENT " + QuoteString(c.Comment))

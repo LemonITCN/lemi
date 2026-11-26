@@ -24,7 +24,8 @@ const defModes = computed<{ value: DefMode; label: string }[]>(() => [
 ])
 
 function locked(c: ColDraft) { return !!c.generated }
-function onUpdateExtra(c: ColDraft) { return /on update/i.test(c.extra) }
+// ON UPDATE 只对时间类型有意义；已经带着 ON UPDATE 的列改了类型也让用户能清掉
+function isTimeType(type: string) { return /^\s*(datetime|timestamp)\b/i.test(type) }
 
 function setName(c: ColDraft, v: string) {
   const prev = c.name
@@ -124,7 +125,6 @@ defineExpose({ add })
                   <input class="ci" :data-col="c.key" :value="c.name" :disabled="locked(c)" spellcheck="false" @input="setName(c, ($event.target as HTMLInputElement).value)" />
                   <span v-if="c.orig_name && c.orig_name !== c.name" class="renamed lm-ellipsis" :title="c.orig_name">{{ c.orig_name }}</span>
                   <span v-if="c.generated" class="lm-badge">{{ $t('designer.generated') }}</span>
-                  <span v-if="onUpdateExtra(c)" class="lm-badge warning">ON UPDATE<InfoTip :text="$t('designer.onUpdateTip')" /></span>
                 </div>
               </td>
               <td class="c-type"><input v-model="c.type" class="ci mono" :list="uid + '-types'" :disabled="locked(c)" spellcheck="false" /></td>
@@ -158,6 +158,9 @@ defineExpose({ add })
                       <input v-model="c.charset" class="ci boxed mono" :list="uid + '-cs'" :disabled="locked(c) || !isTextType(c.type)" spellcheck="false" /></label>
                     <label class="lm-field"><span class="lm-label">{{ $t('designer.col.collation') }}</span>
                       <input v-model="c.collation" class="ci boxed mono" :list="collations(c.charset)" :disabled="locked(c) || !isTextType(c.type)" spellcheck="false" /></label>
+                    <label class="lm-field"><span class="lm-label">ON UPDATE<InfoTip :text="$t('designer.onUpdateTip')" /></span>
+                      <input v-model="c.on_update" class="ci boxed mono" :list="uid + '-onupd'" :disabled="locked(c) || (!isTimeType(c.type) && !c.on_update)" :placeholder="$t('designer.def.none')" spellcheck="false" /></label>
+                    <label class="lm-field ck-field"><input v-model="c.invisible" type="checkbox" class="ck" :disabled="c.primary_key" /><span>{{ $t('designer.col.invisible') }}</span><InfoTip :text="$t('designer.invisibleTip')" /></label>
                   </template>
                   <div v-if="c.generated" class="lm-field full"><span class="lm-label">{{ $t('designer.generatedExpr') }} ({{ c.generated }})</span><code class="lm-mono expr">{{ c.generation_expr }}</code></div>
                   <div v-if="c.extra" class="lm-field full"><span class="lm-label">EXTRA</span><code class="lm-mono expr">{{ c.extra }}</code></div>
@@ -201,6 +204,9 @@ defineExpose({ add })
                 <input v-model="c.charset" class="ci boxed mono" :list="uid + '-cs'" :disabled="locked(c) || !isTextType(c.type)" spellcheck="false" /></label>
               <label class="lm-field"><span class="lm-label">{{ $t('designer.col.collation') }}</span>
                 <input v-model="c.collation" class="ci boxed mono" :list="collations(c.charset)" :disabled="locked(c) || !isTextType(c.type)" spellcheck="false" /></label>
+              <label class="lm-field"><span class="lm-label">ON UPDATE</span>
+                <input v-model="c.on_update" class="ci boxed mono" :list="uid + '-onupd'" :disabled="locked(c) || (!isTimeType(c.type) && !c.on_update)" :placeholder="$t('designer.def.none')" spellcheck="false" /></label>
+              <div class="sw-row"><span>{{ $t('designer.col.invisible') }}</span><Switch v-model="c.invisible" :disabled="c.primary_key" /></div>
             </template>
             <div v-if="c.generated" class="lm-field full"><span class="lm-label">{{ $t('designer.generatedExpr') }}</span><code class="lm-mono expr">{{ c.generation_expr }}</code></div>
             <div v-if="c.extra" class="lm-field full"><span class="lm-label">EXTRA</span><code class="lm-mono expr">{{ c.extra }}</code></div>
@@ -261,5 +267,6 @@ tr.locked td, .card.locked { color: var(--text-2); }
 .card-head .name { flex: 1; font-weight: 500; font-size: 14px; height: 32px; }
 .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .card-grid .full { grid-column: 1 / -1; }
+.ck-field { flex-direction: row; align-items: center; gap: 6px; align-self: end; min-height: 32px; font-size: 13px; color: var(--text-2); }
 .sw-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); min-height: 32px; }
 </style>

@@ -147,9 +147,13 @@ func fakeGitHub(t *testing.T, rel *fakeRelease) *httptest.Server {
 			for name, b := range rel.files {
 				assets = append(assets, map[string]any{"name": name, "size": len(b), "browser_download_url": srv.URL + "/dl/" + name})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"tag_name": rel.tag, "name": "Lemi " + strings.TrimPrefix(rel.tag, "v"), "body": "更新内容",
-				"html_url": srv.URL + "/release", "published_at": "2026-11-26T00:00:00Z", "assets": assets,
+			// 版本列表：混入工具版本、预发布版与更早的正式版，检查时只能挑中 rel
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"tag_name": "tools-mysql-9.7.4.1", "name": "MySQL 工具", "published_at": "2026-11-27T00:00:00Z", "assets": []any{}},
+				{"tag_name": "v99.0.0-rc.1", "name": "预发布", "prerelease": true, "published_at": "2026-11-27T00:00:00Z", "assets": []any{}},
+				{"tag_name": rel.tag, "name": "Lemi " + strings.TrimPrefix(rel.tag, "v"), "body": "更新内容",
+					"html_url": srv.URL + "/release", "published_at": "2026-11-26T00:00:00Z", "assets": assets},
+				{"tag_name": "v0.0.1", "name": "Lemi 0.0.1", "published_at": "2026-01-01T00:00:00Z", "assets": []any{}},
 			})
 		case strings.HasPrefix(r.URL.Path, "/dl/"):
 			b, ok := rel.files[strings.TrimPrefix(r.URL.Path, "/dl/")]
@@ -455,5 +459,23 @@ func TestPackageName(t *testing.T) {
 	}
 	if Supported("linux", "riscv64") || !Supported("windows", "arm64") {
 		t.Fatal("平台支持表不对")
+	}
+}
+
+// 仓库里只有工具版本（tools-mysql-*）与预发布版时，视为还没有正式版，不能报错
+func TestCheckOnlyToolReleases(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"tag_name": "tools-mysql-9.7.4.1", "published_at": "2026-11-27T00:00:00Z", "assets": []any{}},
+			{"tag_name": "tools-mysql-8.0.46", "published_at": "2026-11-26T00:00:00Z", "assets": []any{}},
+			{"tag_name": "v1.0.0-beta.1", "prerelease": true, "published_at": "2026-11-26T00:00:00Z", "assets": []any{}},
+			{"tag_name": "v2.0.0", "draft": true, "published_at": "2026-11-26T00:00:00Z", "assets": []any{}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	u := &Updater{APIURL: srv.URL, Client: srv.Client(), Current: "0.1.0", GOOS: "linux", GOARCH: "amd64"}
+	rel, err := u.Check(context.Background())
+	if err != nil || rel != nil {
+		t.Fatalf("只有工具版本时应当是 (nil, nil)，得到 (%v, %v)", rel, err)
 	}
 }

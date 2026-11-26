@@ -180,6 +180,7 @@ func (c *Conn) Table(ctx context.Context, db, table string) (*driver.TableInfo, 
 			}
 		}
 		col.Invisible = strings.Contains(lx, "invisible")
+		col.OnUpdate = onUpdateOf(extra)
 		col.Charset, col.Collation = cs.String, cl.String
 		col.Length, col.Precision, col.Scale = maxLen.Int64, int(prec.Int64), int(scale.Int64)
 		col.Unsigned = strings.Contains(strings.ToLower(col.Type), "unsigned")
@@ -407,4 +408,19 @@ func sortedKeys(m map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// onUpdateOf 从 EXTRA 里取 ON UPDATE 表达式：MySQL 为「on update CURRENT_TIMESTAMP(3)」，
+// MariaDB 为「on update current_timestamp()」，前面可能还有 DEFAULT_GENERATED，后面可能有 INVISIBLE。
+func onUpdateOf(extra string) string {
+	lx := strings.ToLower(extra)
+	i := strings.Index(lx, "on update ")
+	if i < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(extra[i+len("on update "):])
+	if j := strings.IndexAny(rest, " \t"); j >= 0 {
+		rest = rest[:j]
+	}
+	return rest
 }

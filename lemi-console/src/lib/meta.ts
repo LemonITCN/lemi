@@ -23,6 +23,8 @@ export interface ColumnInfo {
   extra?: string
   primary_key?: boolean
   invisible?: boolean
+  /** MySQL：ON UPDATE 表达式（例如 CURRENT_TIMESTAMP） */
+  on_update?: string
 }
 
 export interface IndexInfo {

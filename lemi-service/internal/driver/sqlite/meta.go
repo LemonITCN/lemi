@@ -341,7 +341,7 @@ func (c *Conn) AlterSQL(ctx context.Context, db string, old *driver.TableInfo, n
 			stmts = append(stmts, "ALTER TABLE "+tbl+" DROP COLUMN "+QuoteIdent(oc.Name))
 		}
 	}
-	if len(next.ForeignKeys) != len(old.ForeignKeys) {
+	if !sameFKs(old.ForeignKeys, next.ForeignKeys) {
 		simple = false
 	}
 	idxStmts, idxSimple := indexChanges(old, next)
@@ -354,30 +354,36 @@ func (c *Conn) AlterSQL(ctx context.Context, db string, old *driver.TableInfo, n
 		}
 		return append(stmts, idxStmts...), nil
 	}
-	// 12 步重建
-	tmp := "_lemi_new_" + next.Name
-	var copyCols, fromCols []string
-	for _, col := range next.Columns {
-		if col.OrigName != "" {
-			copyCols = append(copyCols, QuoteIdent(col.Name))
-			fromCols = append(fromCols, QuoteIdent(col.OrigName))
+	return c.rebuildSQL(ctx, old, next)
+}
+
+// sameFKs 外键是否没变（按内容比较，名字在 SQLite 里只是序号）。
+func sameFKs(old []driver.ForeignKeyInfo, next []driver.ForeignKeyInfo) bool {
+	if len(old) != len(next) {
+		return false
+	}
+	key := func(fk driver.ForeignKeyInfo) string {
+		act := func(s string) string {
+			s = strings.ToUpper(strings.TrimSpace(s))
+			if s == "" {
+				return "NO ACTION"
+			}
+			return s
 		}
+		return strings.ToLower(strings.Join(fk.Columns, ",")+"|"+fk.RefTable+"|"+strings.Join(fk.RefColumns, ",")) + "|" + act(fk.OnDelete) + "|" + act(fk.OnUpdate)
 	}
-	out := []string{
-		"PRAGMA foreign_keys = OFF",
-		"BEGIN",
-		createSQL(tmp, next),
-		"INSERT INTO " + QuoteIdent(tmp) + " (" + strings.Join(copyCols, ", ") + ") SELECT " + strings.Join(fromCols, ", ") + " FROM " + tbl,
-		"DROP TABLE " + tbl,
-		"ALTER TABLE " + QuoteIdent(tmp) + " RENAME TO " + QuoteIdent(next.Name),
+	seen := map[string]int{}
+	for _, fk := range old {
+		seen[key(fk)]++
 	}
-	for _, ix := range next.Indexes {
-		if !ix.Primary {
-			out = append(out, createIndex(next.Name, ix))
+	for _, fk := range next {
+		k := key(fk)
+		if seen[k] == 0 {
+			return false
 		}
+		seen[k]--
 	}
-	out = append(out, "PRAGMA foreign_key_check("+c.QuoteString(next.Name)+")", "COMMIT", "PRAGMA foreign_keys = ON")
-	return out, nil
+	return true
 }
 
 func sameDefault(o driver.ColumnInfo, n driver.ColumnDesign) bool {
@@ -460,6 +466,11 @@ func columnDef(c driver.ColumnDesign, inlinePK bool) string {
 }
 
 func createSQL(name string, d *driver.TableDesign) string {
+	return createSQLWith(name, d, nil, nil, "")
+}
+
+// createSQLWith 生成 CREATE TABLE；extras[i] 是第 i 列原样附加的子句，constraints 是原样附加的表级约束，options 是表选项。
+func createSQLWith(name string, d *driver.TableDesign, extras [][]string, constraints []string, options string) string {
 	var pk []string
 	for _, c := range d.Columns {
 		if c.PrimaryKey {
@@ -467,9 +478,13 @@ func createSQL(name string, d *driver.TableDesign) string {
 		}
 	}
 	var lines []string
-	for _, c := range d.Columns {
+	for i, c := range d.Columns {
 		inline := len(pk) == 1 && c.PrimaryKey && strings.EqualFold(strings.TrimSpace(c.Type), "INTEGER")
-		lines = append(lines, columnDef(c, inline))
+		def := columnDef(c, inline)
+		if i < len(extras) && len(extras[i]) > 0 {
+			def += " " + strings.Join(extras[i], " ")
+		}
+		lines = append(lines, def)
 	}
 	if len(pk) > 1 || (len(pk) == 1 && !inlinePKUsed(d, pk[0])) {
 		var q []string
@@ -495,7 +510,12 @@ func createSQL(name string, d *driver.TableDesign) string {
 		}
 		lines = append(lines, s)
 	}
-	return "CREATE TABLE " + QuoteIdent(name) + " (\n  " + strings.Join(lines, ",\n  ") + "\n)"
+	lines = append(lines, constraints...)
+	out := "CREATE TABLE " + QuoteIdent(name) + " (\n  " + strings.Join(lines, ",\n  ") + "\n)"
+	if options != "" {
+		out += " " + options
+	}
+	return out
 }
 
 func inlinePKUsed(d *driver.TableDesign, pk string) bool {

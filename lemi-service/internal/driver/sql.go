@@ -137,6 +137,7 @@ type ColumnInfo struct {
 	Extra          string   `json:"extra,omitempty"`
 	PrimaryKey     bool     `json:"primary_key,omitempty"`
 	Invisible      bool     `json:"invisible,omitempty"`
+	OnUpdate       string   `json:"on_update,omitempty"` // MySQL：ON UPDATE CURRENT_TIMESTAMP 等
 }
 
 // IndexInfo 是索引。
@@ -188,6 +189,12 @@ type ColumnDesign struct {
 	Charset       string  `json:"charset"`
 	Collation     string  `json:"collation"`
 	PrimaryKey    bool    `json:"primary_key"`
+	// MySQL 专有：ON UPDATE 表达式、生成列（virtual | stored 与表达式）、不可见列。
+	// 改列时整列重写（CHANGE COLUMN），这些属性必须原样带上，否则会被悄悄去掉。
+	OnUpdate       string `json:"on_update"`
+	Generated      string `json:"generated"`
+	GenerationExpr string `json:"generation_expr"`
+	Invisible      bool   `json:"invisible"`
 }
 
 func toString(v any) string {

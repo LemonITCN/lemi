@@ -20,7 +20,10 @@ export interface ColDraft {
   comment: string
   charset: string
   collation: string
-  /** 只读信息：生成列（virtual / stored）与表达式、EXTRA */
+  /** MySQL：ON UPDATE 表达式；不可见列 */
+  on_update: string
+  invisible: boolean
+  /** 只读信息：生成列（virtual / stored）与表达式、EXTRA。提交时原样带上，否则改列时会被去掉 */
   generated: string
   generation_expr: string
   extra: string
@@ -89,6 +92,7 @@ export interface TableDesign {
   columns: {
     orig_name: string; name: string; type: string; nullable: boolean; default: string | null; default_is_expr: boolean
     auto_increment: boolean; comment: string; charset: string; collation: string; primary_key: boolean
+    on_update: string; invisible: boolean; generated: string; generation_expr: string
   }[]
   indexes: IndexInfo[]
   foreign_keys: ForeignKeyInfo[]
@@ -111,6 +115,7 @@ export function colFromInfo(c: ColumnInfo): ColDraft {
   return {
     key: newKey('c'), orig_name: c.name, name: c.name, type: c.type || '', nullable: !!c.nullable, def_mode: d.mode, def_value: d.value,
     auto_increment: !!c.auto_increment, primary_key: !!c.primary_key, comment: c.comment || '', charset: c.charset || '', collation: c.collation || '',
+    on_update: c.on_update || '', invisible: !!c.invisible,
     generated: c.generated || '', generation_expr: c.generation_expr || '', extra: c.extra || '',
   }
 }
@@ -118,7 +123,7 @@ export function colFromInfo(c: ColumnInfo): ColDraft {
 export function newColumn(dialect: Dialect, name = ''): ColDraft {
   return {
     key: newKey('c'), orig_name: '', name, type: dialect === 'mysql' ? 'varchar(255)' : 'TEXT', nullable: true, def_mode: 'none', def_value: '',
-    auto_increment: false, primary_key: false, comment: '', charset: '', collation: '', generated: '', generation_expr: '', extra: '',
+    auto_increment: false, primary_key: false, comment: '', charset: '', collation: '', on_update: '', invisible: false, generated: '', generation_expr: '', extra: '',
   }
 }
 
@@ -264,6 +269,10 @@ export function designFromDraft(d: Draft, dialect: Dialect, origAutoInc = ''): T
       charset: dialect === 'mysql' && isTextType(c.type) ? c.charset.trim() : '',
       collation: dialect === 'mysql' && isTextType(c.type) ? c.collation.trim() : '',
       primary_key: c.primary_key,
+      on_update: dialect === 'mysql' ? c.on_update.trim() : '',
+      invisible: dialect === 'mysql' && c.invisible,
+      generated: c.generated,
+      generation_expr: c.generation_expr,
     })),
     indexes,
     foreign_keys: d.fks.map((f) => ({

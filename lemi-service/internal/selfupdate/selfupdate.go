@@ -1,6 +1,6 @@
 // Package selfupdate 实现在线升级（docs/spec.md §20）：
 //
-//  1. 检查：请求 GitHub 最新正式版（releases/latest），与编进程序的版本比较。
+//  1. 检查：请求 GitHub 版本列表，取 v* 标签里版本号最大的正式版，与编进程序的版本比较。
 //  2. 下载：对应平台的发布包 lemi-<版本>-<系统>-<架构>.tar.gz|zip、SHA256SUMS、SHA256SUMS.sig。
 //  3. 校验：用编进程序的 Ed25519 公钥验证 SHA256SUMS 的签名，再核对发布包的 SHA-256；
 //     清单里必须有「最新版本号」对应的包名，旧版本的清单拿来冒充新版本会因找不到包名被拒绝；不接受降级与同版本重装。
@@ -35,8 +35,9 @@ import (
 	"github.com/LemonITCN/lemi/lemi-service/internal/version"
 )
 
-// DefaultAPIURL 是 GitHub「最新正式版」接口（草稿与预发布版不会出现在这里）。
-const DefaultAPIURL = "https://api.github.com/repos/LemonITCN/lemi/releases/latest"
+// DefaultAPIURL 是 GitHub 的版本列表接口。不用 releases/latest：同一个仓库里还有 tools-mysql-* 这类工具版本，
+// GitHub 的「最新版」可能落到它们身上；这里自己挑 v* 标签里版本号最大的正式版（草稿与预发布版不算）。
+const DefaultAPIURL = "https://api.github.com/repos/LemonITCN/lemi/releases?per_page=100"
 
 // 发布清单文件名。
 const (
@@ -227,7 +228,7 @@ func (u *Updater) fetchLatest(ctx context.Context) (*Release, error) {
 		}
 		return nil, fmt.Errorf("检查新版本失败：HTTP %d", resp.StatusCode)
 	}
-	var body struct {
+	var list []struct {
 		TagName     string    `json:"tag_name"`
 		Name        string    `json:"name"`
 		Body        string    `json:"body"`
@@ -241,19 +242,22 @@ func (u *Updater) fetchLatest(ctx context.Context) (*Release, error) {
 			Size int64  `json:"size"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAPIBody)).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAPIBody)).Decode(&list); err != nil {
 		return nil, fmt.Errorf("检查新版本失败：返回内容无法解析：%w", err)
 	}
-	if body.Draft || body.Prerelease {
-		return nil, nil
-	}
-	v := strings.TrimPrefix(body.TagName, "v")
-	if !ValidVersion(v) {
-		return nil, fmt.Errorf("检查新版本失败：最新版本标签 %q 不是合法的版本号", body.TagName)
-	}
-	rel := &Release{Version: v, Tag: body.TagName, Name: body.Name, Notes: body.Body, URL: body.HTMLURL, PublishedAt: body.PublishedAt}
-	for _, a := range body.Assets {
-		rel.Assets = append(rel.Assets, Asset{Name: a.Name, URL: a.URL, Size: a.Size})
+	var rel *Release
+	for _, body := range list {
+		if body.Draft || body.Prerelease || !strings.HasPrefix(body.TagName, "v") {
+			continue
+		}
+		v := strings.TrimPrefix(body.TagName, "v")
+		if !ValidVersion(v) || (rel != nil && Compare(v, rel.Version) <= 0) {
+			continue
+		}
+		rel = &Release{Version: v, Tag: body.TagName, Name: body.Name, Notes: body.Body, URL: body.HTMLURL, PublishedAt: body.PublishedAt}
+		for _, a := range body.Assets {
+			rel.Assets = append(rel.Assets, Asset{Name: a.Name, URL: a.URL, Size: a.Size})
+		}
 	}
 	return rel, nil
 }

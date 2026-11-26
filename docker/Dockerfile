@@ -76,7 +76,8 @@ ARG APT_MIRROR=
 RUN set -eux; \
     if [ -n "$APT_MIRROR" ]; then sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; fi; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates tzdata; \
+    # libncurses6：官方 mysql 客户端（还原 mysqldump 备份时用）依赖它，不随客户端包打包
+    apt-get install -y --no-install-recommends ca-certificates tzdata libncurses6; \
     rm -rf /var/lib/apt/lists/*; \
     groupadd --system --gid 10001 lemi; \
     useradd --system --uid 10001 --gid 10001 --home-dir /data --no-create-home --shell /usr/sbin/nologin lemi; \

@@ -293,6 +293,7 @@ function problemText(p: Problem) { return t(p.key, p.params || {}) }
     <template v-if="isMy">
       <datalist :id="uid + '-eng'"><option v-for="x in MYSQL_ENGINES" :key="x" :value="x" /></datalist>
       <datalist :id="uid + '-cs'"><option v-for="x in MYSQL_CHARSETS" :key="x" :value="x" /></datalist>
+      <datalist :id="uid + '-onupd'"><option v-for="x in ['CURRENT_TIMESTAMP', 'CURRENT_TIMESTAMP(3)', 'CURRENT_TIMESTAMP(6)']" :key="x" :value="x" /></datalist>
       <datalist :id="uid + '-coll'"><option v-for="x in MYSQL_COLLATIONS" :key="x" :value="x" /></datalist>
       <datalist v-for="cs in MYSQL_CHARSETS" :id="`${uid}-coll-${cs}`" :key="cs"><option v-for="x in collFor(cs)" :key="x" :value="x" /></datalist>
     </template>
