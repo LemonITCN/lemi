@@ -10,7 +10,7 @@ import { i18n } from '@/i18n'
 export function openDesigner(conn: Conn, database: string, table?: string) {
   const t = i18n.global.t
   if (table) {
-    return useTabs().open('designer', { connectionId: conn.id, database, table }, { title: table, key: `designer:${conn.id}:${database}:${table}`, connectionId: conn.id })
+    return useTabs().open('designer', { connectionId: conn.id, database, table }, { title: `${table} · ${t('designer.design')}`, key: `designer:${conn.id}:${database}:${table}`, connectionId: conn.id })
   }
   return useTabs().open('designer', { connectionId: conn.id, database }, { title: t('designer.newTable'), connectionId: conn.id })
 }
