@@ -1,0 +1,592 @@
+# 构建、测试与发布（docs/spec.md §20）。全部用 GitHub 免费 runner。
+#
+# 推送 main、PR、手动触发：只编译与测试，不发布任何东西
+#   前端        npm ci、npm run build、npm audit（高危及以上失败）
+#   服务端      go vet、go test（Linux、macOS、Windows）+ 编译启动冒烟测试
+#   数据库      服务容器起 MySQL 5.7 / 8.0 / 8.4 / 9.x、MariaDB 10.11 / 11.4，跑连接服务、自研导出器、备份的集成测试
+#   交叉编译    linux-amd64/arm64、darwin-arm64/amd64、windows-amd64/arm64（CGO 关闭，内嵌前端）
+#   macOS       用固定证书签名并自测（没有证书时临时签名）
+#   安全        gitleaks 扫描全部历史、govulncheck
+#   Docker      构建 linux/amd64 + linux/arm64 镜像并自测（不推送）
+# 推送 v* 标签：以上全部通过后
+#   Release「Lemi <版本>」：lemi-<版本>-<系统>-<架构>.tar.gz|zip（lemi(.exe) + README.md + LICENSE）、SHA256SUMS、SHA256SUMS.sig
+#   镜像 ghcr.io/lemonitcn/lemi:<版本> 与 latest（预发布版本号带 - 的只推版本号，Release 标为预发布）
+#
+# Secrets（维护者本机备份在 ~/.lemi-secrets/，永不更换）
+#   MACOS_CERTIFICATE_P12 / MACOS_CERTIFICATE_PASSWORD / MACOS_SIGN_IDENTITY
+#     Lemi 专用自签名代码签名证书（CN=Lemi Code Signing，2046 年到期）。签名身份固定，macOS 防火墙等授权升级后保留。
+#     以后换 Developer ID 证书时同名替换这三个 Secrets；要公证再加 APPLE_NOTARY_* 并在 macos 任务里加公证步骤。
+#   LEMI_RELEASE_SIGNING_KEY
+#     发布签名私钥（Ed25519 种子 base64），公钥编在 lemi-service/internal/selfupdate/pubkey.go。
+#     换了它，已安装的旧版本就无法在线升级。签名前会核对私钥与内置公钥匹配。
+#
+# 脚本注意：macOS 自带 bash 3.2 会把紧跟在 $变量 后面的中文字节当成变量名的一部分，变量后接中文一律写 ${V}；
+# bsdtar 先处理 -C 再打开归档，归档路径一律用绝对路径。
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GO_VERSION: '1.26'
+  NODE_VERSION: '22'
+  # 标签发布时用标签做版本号（scripts/build.sh 会去掉开头的 v），否则用 internal/version 里的开发版本号
+  LEMI_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+  IMAGE: ghcr.io/lemonitcn/lemi
+
+jobs:
+  console:
+    name: 前端（构建与依赖审计）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: 检查前端工程
+        id: has
+        run: |
+          if [ -f lemi-console/package.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_REF_TYPE" = tag ]; then
+              echo "::error::发布版本必须包含前端（lemi-console/package.json）"
+              exit 1
+            fi
+            echo "::warning::还没有 lemi-console/package.json，跳过前端（编出来的程序只有占位页）"
+          fi
+      - uses: actions/setup-node@v7
+        if: steps.has.outputs.present == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: lemi-console/package-lock.json
+      - name: 安装依赖并构建
+        if: steps.has.outputs.present == 'true'
+        working-directory: lemi-console
+        run: |
+          # 锁文件里的下载地址可能是国内镜像，统一换成官方源
+          npm config set replace-registry-host always
+          npm ci --no-audit --no-fund
+          npm run build
+          test -f dist/index.html
+      - name: 依赖安全审计（高危及以上即失败）
+        if: steps.has.outputs.present == 'true'
+        working-directory: lemi-console
+        run: npm audit --audit-level=high
+      - name: 没有前端时上传空产物
+        if: steps.has.outputs.present != 'true'
+        run: mkdir -p lemi-console/dist && touch lemi-console/dist/.keep
+      - uses: actions/upload-artifact@v7
+        with:
+          name: console-dist
+          path: lemi-console/dist
+          include-hidden-files: true
+          if-no-files-found: error
+
+  test:
+    name: 服务端测试（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: lemi-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: lemi-service/go.sum
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -count=1 ./...
+      - name: 冒烟测试（编译、启动、健康检查、初始化接口、停止）
+        run: |
+          EXE=""
+          [ "$RUNNER_OS" = Windows ] && EXE=.exe
+          B="$RUNNER_TEMP/lemi$EXE"
+          D="$RUNNER_TEMP/lemi-data"
+          go build -o "$B" ./cmd/lemi
+          "$B" version
+          "$B" serve --data "$D" --listen 127.0.0.1:17700 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          PID=$!
+          ok=0
+          for _ in $(seq 1 60); do
+            if "$B" healthcheck --data "$D" --listen 127.0.0.1:17700 >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" = 1 ]; then
+            curl -fsS http://127.0.0.1:17700/api/v1/bootstrap | tee "$RUNNER_TEMP/bootstrap.json"
+            echo
+            grep -q '"needs_setup":true' "$RUNNER_TEMP/bootstrap.json" || ok=0
+            test -s "$D/setup-token" || ok=0
+          fi
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+          cat "$RUNNER_TEMP/serve.log"
+          [ "$ok" = 1 ] || { echo "::error::冒烟测试失败"; exit 1; }
+
+  db-test:
+    name: 数据库集成测试（${{ matrix.name }}）
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: MySQL 5.7, key: mysql57, image: 'mysql:5.7', admin: mysqladmin }
+          - { name: MySQL 8.0, key: mysql80, image: 'mysql:8.0', admin: mysqladmin }
+          - { name: MySQL 8.4, key: mysql84, image: 'mysql:8.4', admin: mysqladmin }
+          - { name: MySQL 9.x, key: mysql9, image: 'mysql:9', admin: mysqladmin }
+          - { name: MariaDB 10.11, key: mariadb1011, image: 'mariadb:10.11', admin: mariadb-admin }
+          - { name: MariaDB 11.4, key: mariadb114, image: 'mariadb:11.4', admin: mariadb-admin }
+    services:
+      db:
+        image: ${{ matrix.image }}
+        # 临时容器的 root 口令按运行号生成，不写死在仓库里
+        env:
+          MYSQL_ROOT_PASSWORD: lemi-ci-${{ github.run_id }}
+          MARIADB_ROOT_PASSWORD: lemi-ci-${{ github.run_id }}
+        ports: ['3306:3306']
+        # 初始化期间的临时服务不监听 TCP，用 127.0.0.1 探活才能等到真正可用
+        options: >-
+          --health-cmd "${{ matrix.admin }} ping -h 127.0.0.1 -uroot -plemi-ci-${{ github.run_id }} --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 60
+    env:
+      DB_PASSWORD: lemi-ci-${{ github.run_id }}
+      # internal/conns 的集成测试
+      LEMI_TEST_MYSQL_ADDR: 127.0.0.1:3306
+      LEMI_TEST_MYSQL_PASSWORD: lemi-ci-${{ github.run_id }}
+      # 自研导出器（sqldump）往返测试：<名称>=<DSN>
+      LEMI_TEST_MYSQL: '${{ matrix.key }}=root:lemi-ci-${{ github.run_id }}@tcp(127.0.0.1:3306)/'
+    defaults:
+      run:
+        working-directory: lemi-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: lemi-service/go.sum
+      - name: 服务器版本
+        run: mysql -h 127.0.0.1 -P 3306 -uroot -p"$DB_PASSWORD" -N -e 'SELECT VERSION()' 2>/dev/null || echo "（runner 上没有 mysql 客户端，跳过）"
+      - name: 集成测试（连接服务、自研导出器往返、备份）
+        run: |
+          PKGS=()
+          for p in ./internal/conns/ ./internal/sqldump/ ./internal/backup/...; do
+            found="$(go list "$p" 2>/dev/null || true)"
+            if [ -z "$found" ]; then
+              echo "跳过（还没有这个包）：${p}"
+              continue
+            fi
+            while IFS= read -r line; do PKGS+=("$line"); done <<< "$found"
+          done
+          printf '测试包：%s\n' "${PKGS[@]}"
+          # 同一台数据库，包之间串行，避免互相删库
+          go test -count=1 -p 1 -timeout 40m "${PKGS[@]}"
+
+  build:
+    name: 交叉编译（6 个平台）
+    needs: console
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: lemi-service/go.sum
+      - uses: actions/download-artifact@v8
+        with:
+          name: console-dist
+          path: lemi-service/internal/web/dist
+      - name: 校验标签格式
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::标签 ${GITHUB_REF_NAME} 不是 v主.次.修订[-预发布] 格式"
+            exit 1
+          fi
+      - name: 编译
+        run: scripts/build.sh --skip-console --no-package
+      - name: 冒烟测试（Linux x64：版本号、启动、内嵌前端、健康检查）
+        run: |
+          B=dist/bin/linux-amd64/lemi
+          out="$("$B" version)"
+          echo "$out"
+          if [ -n "$LEMI_VERSION" ] && [[ "$out" != "lemi ${LEMI_VERSION#v} "* ]]; then
+            echo "::error::版本号没有编进程序"
+            exit 1
+          fi
+          D="$RUNNER_TEMP/lemi-data"
+          "$B" serve --data "$D" --listen 127.0.0.1:17701 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          PID=$!
+          ok=0
+          for _ in $(seq 1 60); do
+            if "$B" healthcheck --data "$D" --listen 127.0.0.1:17701 >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" = 1 ] && [ -f lemi-service/internal/web/dist/index.html ]; then
+            curl -fsS http://127.0.0.1:17701/ > "$RUNNER_TEMP/index.html"
+            if grep -q '前端尚未构建' "$RUNNER_TEMP/index.html"; then echo "::error::前端没有嵌进程序"; ok=0; fi
+          fi
+          kill -TERM "$PID" 2>/dev/null || true
+          wait "$PID" || true
+          cat "$RUNNER_TEMP/serve.log"
+          [ "$ok" = 1 ]
+          file dist/bin/*/lemi*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bin
+          path: dist/bin
+          if-no-files-found: error
+
+  macos:
+    name: macOS 签名与自测
+    needs: build
+    runs-on: macos-26
+    env:
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: bin
+          path: dist/bin
+      - name: 导入签名证书（临时钥匙串）
+        if: env.MACOS_CERTIFICATE_P12 != ''
+        env:
+          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          KC="$RUNNER_TEMP/sign.keychain-db"
+          KC_PASS="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASS" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PASS" "$KC" >/dev/null
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+      - name: 签名（固定的 Lemi 专用证书；没有证书时临时签名）
+        run: |
+          ID="${SIGN_IDENTITY:--}"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$ID" = "-" ]; then
+            echo "::error::发布版本必须用固定证书签名（检查 Secrets MACOS_CERTIFICATE_P12 / MACOS_CERTIFICATE_PASSWORD / MACOS_SIGN_IDENTITY）"
+            exit 1
+          fi
+          for a in arm64 amd64; do
+            f="dist/bin/darwin-$a/lemi"
+            chmod +x "$f"
+            # 固定标识符 + 固定证书 = 固定的指定要求，系统授权升级后保留
+            codesign --force --options runtime --identifier cn.lemonit.lemi --sign "$ID" "$f"
+            codesign --verify --strict --verbose=2 "$f"
+            codesign -d --verbose=2 "$f" 2>&1 | grep -E '^(Identifier|Authority|Signature|TeamIdentifier)'
+            codesign -d -r- "$f" 2>&1 | tail -1
+          done
+          lipo -info dist/bin/darwin-arm64/lemi dist/bin/darwin-amd64/lemi
+          dist/bin/darwin-arm64/lemi version
+          arch -x86_64 dist/bin/darwin-amd64/lemi version || echo "（没有 Rosetta，跳过 Intel 版运行）"
+      - name: 自测（启动、健康检查、初始化接口、停止）
+        run: |
+          B="$PWD/dist/bin/darwin-arm64/lemi"
+          D="$RUNNER_TEMP/lemi-data"
+          "$B" serve --data "$D" --listen 127.0.0.1:17703 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          PID=$!
+          ok=0
+          for _ in $(seq 1 60); do
+            if "$B" healthcheck --data "$D" --listen 127.0.0.1:17703 >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" = 1 ]; then
+            curl -fsS http://127.0.0.1:17703/api/v1/bootstrap > "$RUNNER_TEMP/bootstrap.json" || ok=0
+            grep -q '"needs_setup":true' "$RUNNER_TEMP/bootstrap.json" || ok=0
+          fi
+          kill -TERM "$PID" 2>/dev/null || true
+          wait "$PID" || true
+          cat "$RUNNER_TEMP/serve.log"
+          [ "$ok" = 1 ]
+      - name: 删除临时钥匙串
+        if: always() && env.MACOS_CERTIFICATE_P12 != ''
+        run: security delete-keychain "$RUNNER_TEMP/sign.keychain-db" || true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bin-darwin-signed
+          path: dist/bin/darwin-*
+          if-no-files-found: error
+
+  gitleaks:
+    name: 密钥泄露扫描（全部历史）
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: 安装 gitleaks（固定版本，校验 SHA-256）
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          F="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$F" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$F"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$F" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$RUNNER_TEMP/$F" -C "$RUNNER_TEMP/gitleaks" gitleaks
+          echo "$RUNNER_TEMP/gitleaks" >> "$GITHUB_PATH"
+      - name: 扫描
+        run: gitleaks git --redact --verbose --exit-code 1 .
+
+  govulncheck:
+    name: Go 漏洞检查
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: lemi-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: lemi-service/go.sum
+      - name: govulncheck
+        env:
+          GOPROXY: https://proxy.golang.org,direct
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  docker:
+    name: Docker 镜像（linux/amd64、linux/arm64）
+    needs: [console, test, db-test, build, macos, gitleaks, govulncheck]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: 版本号
+        id: v
+        run: |
+          V="${LEMI_VERSION#v}"
+          [ -n "$V" ] || V="$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' lemi-service/internal/version/version.go | head -1)"
+          {
+            echo "version=${V}"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            case "$V" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.v.outputs.version }}
+            type=raw,value=latest,enable=${{ steps.v.outputs.prerelease == 'false' }}
+          labels: |
+            org.opencontainers.image.title=Lemi
+            org.opencontainers.image.description=Web 数据库管理、定时备份与 AI 智能体
+            org.opencontainers.image.licenses=MIT
+      - name: 本机架构构建（自测用）
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: lemi:test
+          build-args: |
+            VERSION=${{ steps.v.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.v.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: 自测（非 root、只读根文件系统、健康检查、初始化令牌、版本号）
+        env:
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          test "$(docker image inspect -f '{{.Config.User}}' lemi:test)" = "10001:10001"
+          docker run -d --name lemi -p 127.0.0.1:17702:7700 --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true lemi:test
+          st=""
+          for _ in $(seq 1 60); do
+            st="$(docker inspect -f '{{.State.Health.Status}}' lemi)"
+            [ "$st" = healthy ] && break
+            sleep 3
+          done
+          docker logs lemi > "$RUNNER_TEMP/lemi.log" 2>&1
+          cat "$RUNNER_TEMP/lemi.log"
+          [ "$st" = healthy ] || { echo "::error::容器健康检查没有通过：${st}"; exit 1; }
+          curl -fsS http://127.0.0.1:17702/api/v1/bootstrap > "$RUNNER_TEMP/bootstrap.json"
+          cat "$RUNNER_TEMP/bootstrap.json"
+          grep -q "\"version\":\"${V}\"" "$RUNNER_TEMP/bootstrap.json"
+          grep -q 初始化令牌 "$RUNNER_TEMP/lemi.log"
+          docker exec lemi lemi version
+          docker exec lemi ls -la /data /opt/lemi/tools
+          docker stop -t 30 lemi
+          docker rm lemi
+      - name: 构建全部架构${{ env.PUSH == 'true' && '并推送' || '（不推送）' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.v.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.v.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: 发布 Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [console, test, db-test, build, macos, gitleaks, govulncheck, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache-dependency-path: lemi-service/go.sum
+      - uses: actions/download-artifact@v8
+        with:
+          name: bin
+          path: dist/bin
+      - name: 换上签过名的 macOS 程序
+        uses: actions/download-artifact@v8
+        with:
+          name: bin-darwin-signed
+          path: dist/bin
+      - name: 打包（lemi + README.md + LICENSE）与 SHA256SUMS
+        run: scripts/build.sh --package-only
+      - name: 发布签名（Ed25519，私钥必须与程序内置公钥匹配）
+        working-directory: lemi-service
+        env:
+          LEMI_RELEASE_SIGNING_KEY: ${{ secrets.LEMI_RELEASE_SIGNING_KEY }}
+        run: |
+          if [ -z "$LEMI_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::缺少 Secrets LEMI_RELEASE_SIGNING_KEY，没有签名的版本无法在线升级"
+            exit 1
+          fi
+          go run ./internal/selfupdate/releasesign sign ../dist/SHA256SUMS
+          go run ./internal/selfupdate/releasesign verify ../dist/SHA256SUMS
+      - name: 核对（六个包齐全、版本号、校验和）
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          for p in linux-amd64.tar.gz linux-arm64.tar.gz darwin-arm64.tar.gz darwin-amd64.tar.gz windows-amd64.zip windows-arm64.zip; do
+            test -s "dist/lemi-${V}-${p}" || { echo "::error::缺少 lemi-${V}-${p}"; exit 1; }
+          done
+          mkdir -p "$RUNNER_TEMP/t"
+          tar -xzf "$PWD/dist/lemi-${V}-linux-amd64.tar.gz" -C "$RUNNER_TEMP/t"
+          out="$("$RUNNER_TEMP/t/lemi" version)"
+          echo "$out"
+          [[ "$out" == "lemi ${V} "* ]] || { echo "::error::包里的程序版本号不是 ${V}"; exit 1; }
+          (cd dist && sha256sum -c SHA256SUMS)
+          cat dist/SHA256SUMS dist/SHA256SUMS.sig
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          V="${TAG#v}"
+          DL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          row() { echo "| $1 | [$2]($DL/$2) |"; }
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$GITHUB_SHA^" 2>/dev/null || true)"
+          {
+            echo "## 下载"
+            echo
+            echo "| 系统 | 文件 |"
+            echo "|---|---|"
+            row "Windows 10 / 11，x64" "lemi-${V}-windows-amd64.zip"
+            row "Windows 10 / 11，ARM64（原生 ARM64 程序）" "lemi-${V}-windows-arm64.zip"
+            row "macOS，Apple 芯片（M 系列）" "lemi-${V}-darwin-arm64.tar.gz"
+            row "macOS，Intel" "lemi-${V}-darwin-amd64.tar.gz"
+            row "Linux，x64" "lemi-${V}-linux-amd64.tar.gz"
+            row "Linux，ARM64" "lemi-${V}-linux-arm64.tar.gz"
+            echo
+            echo "每个包里是 \`lemi\`（Windows 为 \`lemi.exe\`）、README.md、LICENSE。纯 Go 单文件，网页界面已内嵌。"
+            echo
+            echo "### Docker"
+            echo
+            echo '```sh'
+            echo "docker pull ${IMAGE}:${V}"
+            echo "curl -fsSLO https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$TAG/docker/docker-compose.yml && docker compose up -d"
+            echo '```'
+            echo
+            echo "linux/amd64、linux/arm64，非 root 运行，数据目录 /data，预装 mysqldump。容器里不做在线自升级：\`docker compose pull && docker compose up -d\`。"
+            echo
+            echo "### 快速开始"
+            echo
+            echo '1. 解压后运行 `./lemi`（Windows 在 PowerShell 里运行 `.\lemi.exe`），默认监听 http://127.0.0.1:7700，控制台会打印一次性初始化令牌。'
+            echo '2. 装成开机自启的系统服务：`sudo ./lemi service install --listen 0.0.0.0:7700 && sudo ./lemi service start`（Windows 用管理员 PowerShell 运行 `.\lemi.exe service install`）。'
+            echo '3. 放到公网前先启用 HTTPS，见 README「公网部署安全清单」。'
+            echo
+            echo "### macOS 首次打开"
+            echo
+            echo "macOS 版用 Lemi 专用的固定证书签名（每个版本签名身份相同，防火墙等授权升级后保留），但自签名证书不能经过苹果公证：用浏览器下载的首次打开会被拦下，到「系统设置 → 隐私与安全性」底部点「仍要打开」，或在终端执行 \`xattr -d com.apple.quarantine lemi\` 去掉隔离标记。"
+            echo
+            echo "### Windows ARM64 与 MySQL 备份"
+            echo
+            echo "MySQL 官方没有 Windows ARM64 版 mysqldump：Windows 11 ARM 用 x64 仿真运行 x64 版；Windows 10 ARM 不能运行 x64 程序，MySQL 备份只能用 Lemi 自研导出器。"
+            echo
+            echo "### 校验"
+            echo
+            echo "[SHA256SUMS]($DL/SHA256SUMS) 与发布签名 [SHA256SUMS.sig]($DL/SHA256SUMS.sig)（Ed25519）。程序内的在线升级只安装签名有效、版本更新的包；手工校验方法见 README「在线升级」。"
+            echo
+            echo "## 更新内容"
+            echo
+            if [ -n "$PREV" ]; then
+              git log --no-merges --format='- %s' "$PREV..$GITHUB_SHA" | head -80
+            else
+              git log --no-merges --format='- %s' "$GITHUB_SHA" | head -80
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+          FLAGS=(--latest)
+          case "$V" in *-*) FLAGS=(--prerelease --latest=false) ;; esac
+          FILES=(dist/lemi-"$V"-*.tar.gz dist/lemi-"$V"-*.zip dist/SHA256SUMS dist/SHA256SUMS.sig)
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "${FILES[@]}"
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "Lemi $V" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Lemi $V" \
+              --notes-file "$RUNNER_TEMP/notes.md" "${FLAGS[@]}" "${FILES[@]}"
+          fi

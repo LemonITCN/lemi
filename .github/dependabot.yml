@@ -1,0 +1,49 @@
+# 每周检查依赖更新（Go 模块、前端 npm 包、GitHub Actions、Docker 基础镜像），小版本与补丁合成一个 PR。
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /lemi-service
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 10
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "依赖（Go）"
+
+  - package-ecosystem: npm
+    directory: /lemi-console
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "依赖（前端）"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Shanghai
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "依赖（Actions）"
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Asia/Shanghai
+    commit-message:
+      prefix: "依赖（Docker）"
