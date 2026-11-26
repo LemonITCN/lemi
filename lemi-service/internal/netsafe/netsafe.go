@@ -82,6 +82,26 @@ func Client(timeout time.Duration) *http.Client {
 	}}
 }
 
+// StreamingClient 返回不设整体超时的安全客户端（模型流式响应可能持续数分钟）：
+// 建连时检查实际 IP（防 DNS 重绑定），重定向逐跳检查，不走环境代理。
+func StreamingClient() *http.Client {
+	d := &net.Dialer{Timeout: 10 * time.Second, Control: dialControl}
+	tr := &http.Transport{
+		DialContext:           d.DialContext,
+		Proxy:                 nil,
+		MaxIdleConns:          20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 180 * time.Second,
+	}
+	return &http.Client{Transport: tr, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("重定向次数过多")
+		}
+		return CheckURL(req.URL)
+	}}
+}
+
 // CheckURL 检查 URL 协议与主机。
 func CheckURL(u *url.URL) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
