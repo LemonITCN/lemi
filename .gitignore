@@ -14,3 +14,4 @@ lemi-service/bin/
 *.test
 *.out
 coverage.*
+.claude/
