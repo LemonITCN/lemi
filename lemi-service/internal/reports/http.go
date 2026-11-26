@@ -285,4 +285,6 @@ func (s *Service) Public(srv *web.Server) func(r chi.Router) {
 }
 
 // ValidShareToken 前端分享页的路径是否像一个令牌（给静态路由判断用）。
-func ValidShareToken(t string) bool { return len(t) >= 20 && len(t) <= 64 && !strings.ContainsAny(t, "/.") }
+func ValidShareToken(t string) bool {
+	return len(t) >= 20 && len(t) <= 64 && !strings.ContainsAny(t, "/.")
+}

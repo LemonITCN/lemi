@@ -291,26 +291,11 @@ func (s *Service) Routes(srv *web.Server, r chi.Router) {
 		if err := web.ReadJSON(r, &in); err != nil {
 			return err
 		}
-		name := strings.TrimSpace(in.Name)
-		if name == "" || len([]rune(name)) > 60 {
-			return apperr.Bad("令牌名称不能为空，且不超过 60 个字符")
-		}
-		if in.ExpiresDays < 0 || in.ExpiresDays > 3650 {
-			return apperr.Bad("有效期应在 0–3650 天")
-		}
-		levels, err := s.CheckLevels(r.Context(), u, in.WorkspaceID, in.Levels)
+		raw, g, err := s.CreatePAT(r.Context(), u, in.Name, in.WorkspaceID, in.Levels, in.ExpiresDays)
 		if err != nil {
 			return apperr.Bad("%s", err.Error())
 		}
-		raw := randToken(PATPrefix)
-		g := &Grant{ID: ids.New(), UserID: u.ID, Kind: "pat", Name: name, WorkspaceID: in.WorkspaceID, TokenHash: hash(raw), TokenHint: raw[:len(PATPrefix)+4] + "…"}
-		if in.ExpiresDays > 0 {
-			g.ExpiresAt = time.Now().Add(time.Duration(in.ExpiresDays) * 24 * time.Hour).UnixMilli()
-		}
-		if err := s.createGrant(r.Context(), g, levels); err != nil {
-			return err
-		}
-		srv.AuditR(r, audit.Entry{WorkspaceID: in.WorkspaceID, Action: "mcp.token_created", Target: g.ID, OK: true}, map[string]any{"name": name, "levels": levels, "expires_at": g.ExpiresAt})
+		srv.AuditR(r, audit.Entry{WorkspaceID: in.WorkspaceID, Action: "mcp.token_created", Target: g.ID, OK: true}, map[string]any{"name": g.Name, "levels": g.Levels(), "expires_at": g.ExpiresAt})
 		return web.OK(w, map[string]any{"token": raw, "grant": s.grantView(r.Context(), g)})
 	}))
 	r.Delete("/me/mcp/tokens/{id}", h(func(w http.ResponseWriter, r *http.Request) error {
@@ -537,4 +522,3 @@ func (s *Service) Cleanup(ctx context.Context) {
 	_, _ = s.st.Exec(ctx, `DELETE FROM oauth_codes WHERE expires_at < ?`, now)
 	_, _ = s.st.Exec(ctx, `DELETE FROM oauth_tokens WHERE expires_at < ?`, now-24*3600*1000)
 }
-

@@ -259,7 +259,9 @@ var ErrRejected = errors.New("用户拒绝了这次操作")
 // RejectedError 用户拒绝并给了说明：作为工具错误回灌，循环继续。
 type RejectedError struct{ Message string }
 
-func (e *RejectedError) Error() string { return "用户拒绝了这次操作，用户的说明：" + e.Message }
+func (e *RejectedError) Error() string {
+	return "用户拒绝了这次操作，用户的说明：" + e.Message
+}
 
 // Call 执行工具：参数按 schema 修复，所有错误都转成给模型看的结果，过长输出截断并存为结果集。
 func (r *Registry) Call(env *Env, t *Tool, args json.RawMessage) (res *Result) {
@@ -363,7 +365,9 @@ func str(desc string) map[string]any { return map[string]any{"type": "string", "
 func integer(desc string) map[string]any {
 	return map[string]any{"type": "integer", "description": desc}
 }
-func boolean(desc string) map[string]any { return map[string]any{"type": "boolean", "description": desc} }
+func boolean(desc string) map[string]any {
+	return map[string]any{"type": "boolean", "description": desc}
+}
 func arr(items map[string]any, desc string) map[string]any {
 	return map[string]any{"type": "array", "items": items, "description": desc}
 }

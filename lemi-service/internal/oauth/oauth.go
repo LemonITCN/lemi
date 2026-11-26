@@ -25,6 +25,7 @@ import (
 
 	"github.com/LemonITCN/lemi/lemi-service/internal/accounts"
 	"github.com/LemonITCN/lemi/lemi-service/internal/conns"
+	"github.com/LemonITCN/lemi/lemi-service/internal/ids"
 	"github.com/LemonITCN/lemi/lemi-service/internal/settings"
 	"github.com/LemonITCN/lemi/lemi-service/internal/store"
 	"github.com/LemonITCN/lemi/lemi-service/internal/tools"
@@ -159,7 +160,9 @@ func (s *Service) touch(id string) {
 	}
 	s.lastUsed[id] = time.Now()
 	s.lastUsedMu.Unlock()
-	go func() { _, _ = s.st.Exec(context.Background(), `UPDATE mcp_grants SET last_used_at = ? WHERE id = ?`, store.Now(), id) }()
+	go func() {
+		_, _ = s.st.Exec(context.Background(), `UPDATE mcp_grants SET last_used_at = ? WHERE id = ?`, store.Now(), id)
+	}()
 }
 
 // MaxLevel 一个连接在 MCP 授权里最高能选的档位：不高于用户对它的实际 AI 档位，且只能是 MCP 可用的档位。
@@ -238,6 +241,30 @@ func (s *Service) createGrant(ctx context.Context, g *Grant, levels tools.Grant)
 	g.LevelsJSON = toJSON(levels)
 	g.CreatedAt = store.Now()
 	return s.st.Add(ctx, "mcp_grants", g)
+}
+
+// CreatePAT 创建个人访问令牌（明文只在这里返回一次，库里只存哈希）。
+func (s *Service) CreatePAT(ctx context.Context, u *accounts.User, name, wsID string, levels map[string]string, expiresDays int) (string, *Grant, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len([]rune(name)) > 60 {
+		return "", nil, errors.New("令牌名称不能为空，且不超过 60 个字符")
+	}
+	if expiresDays < 0 || expiresDays > 3650 {
+		return "", nil, errors.New("有效期应在 0–3650 天")
+	}
+	lv, err := s.CheckLevels(ctx, u, wsID, levels)
+	if err != nil {
+		return "", nil, err
+	}
+	raw := randToken(PATPrefix)
+	g := &Grant{ID: ids.New(), UserID: u.ID, Kind: "pat", Name: name, WorkspaceID: wsID, TokenHash: hash(raw), TokenHint: raw[:len(PATPrefix)+4] + "…"}
+	if expiresDays > 0 {
+		g.ExpiresAt = time.Now().Add(time.Duration(expiresDays) * 24 * time.Hour).UnixMilli()
+	}
+	if err := s.createGrant(ctx, g, lv); err != nil {
+		return "", nil, err
+	}
+	return raw, g, nil
 }
 
 // RevokeGrant 吊销授权与其全部令牌。

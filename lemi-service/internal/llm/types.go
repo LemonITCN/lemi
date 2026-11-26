@@ -150,19 +150,19 @@ type Provider interface {
 type ErrorKind string
 
 const (
-	ErrContextOverflow  ErrorKind = "context_overflow"   // 上下文溢出：触发压缩，不重试
-	ErrRequestTooLarge  ErrorKind = "request_too_large"  // 请求体过大：不重试
-	ErrContentPolicy    ErrorKind = "content_policy"     // 内容策略：不重试
-	ErrQuota            ErrorKind = "quota"              // 额度用完：不重试
-	ErrAuth             ErrorKind = "auth"               // 鉴权：不重试
-	ErrInvalidRequest   ErrorKind = "invalid_request"    // 无效请求：不重试
-	ErrRateLimit        ErrorKind = "rate_limit"         // 限流：重试
-	ErrServer           ErrorKind = "server"             // 服务端错误：重试
-	ErrNetwork          ErrorKind = "network"            // 请求没送达（连接被拒、重置、超时）：重试
-	ErrNetworkDown      ErrorKind = "network_down"       // DNS 失败、网络不可达：单独计预算重试
-	ErrStreamIncomplete ErrorKind = "stream_incomplete"  // 流没有正常结束：重试（已有输出时保存后开新一步）
-	ErrCanceled         ErrorKind = "canceled"           // 用户停止
-	ErrUnknown          ErrorKind = "unknown"            // 其他：重试
+	ErrContextOverflow  ErrorKind = "context_overflow"  // 上下文溢出：触发压缩，不重试
+	ErrRequestTooLarge  ErrorKind = "request_too_large" // 请求体过大：不重试
+	ErrContentPolicy    ErrorKind = "content_policy"    // 内容策略：不重试
+	ErrQuota            ErrorKind = "quota"             // 额度用完：不重试
+	ErrAuth             ErrorKind = "auth"              // 鉴权：不重试
+	ErrInvalidRequest   ErrorKind = "invalid_request"   // 无效请求：不重试
+	ErrRateLimit        ErrorKind = "rate_limit"        // 限流：重试
+	ErrServer           ErrorKind = "server"            // 服务端错误：重试
+	ErrNetwork          ErrorKind = "network"           // 请求没送达（连接被拒、重置、超时）：重试
+	ErrNetworkDown      ErrorKind = "network_down"      // DNS 失败、网络不可达：单独计预算重试
+	ErrStreamIncomplete ErrorKind = "stream_incomplete" // 流没有正常结束：重试（已有输出时保存后开新一步）
+	ErrCanceled         ErrorKind = "canceled"          // 用户停止
+	ErrUnknown          ErrorKind = "unknown"           // 其他：重试
 )
 
 // APIError 是供应商返回的错误，或本层识别出的错误。

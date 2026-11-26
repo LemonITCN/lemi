@@ -46,10 +46,10 @@ func init() {
 
 func reportWrite(env *Env, args json.RawMessage) (*Result, error) {
 	var in struct {
-		ReportID string `json:"report_id"`
-		Title    string `json:"title"`
+		ReportID string  `json:"report_id"`
+		Title    string  `json:"title"`
 		Body     *string `json:"body"`
-		Append   string `json:"append"`
+		Append   string  `json:"append"`
 		Edits    []struct {
 			Old string `json:"old"`
 			New string `json:"new"`

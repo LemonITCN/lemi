@@ -30,6 +30,9 @@ const instructions = `Lemi 是 Web 数据库管理与分析工具。这些工具
 能在 SQL 里聚合的就在 SQL 里聚合。写入用 execute_sql（档位允许时才能执行，执行前请向用户确认）。
 create_chart / create_diagram / er_diagram 生成的图表与图保存在 Lemi 里，report_write 写的报告可以在 Lemi 网页里查看、导出与分享。`
 
+// NewProtocol 起无会话的协议版本。
+const NewProtocol = "2026-07-28"
+
 // RateLimit 每个授权每分钟的请求数。
 var RateLimit = 120
 
@@ -70,8 +73,14 @@ func (l *limiter) allow(key string, n int) (bool, time.Duration) {
 // Handler 返回 /mcp 的处理器。
 func Handler(cfg Config) http.Handler {
 	srv := newServer(cfg)
-	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{
+	get := func(*http.Request) *mcp.Server { return srv }
+	// 旧协议（≤ 2025-11-25）走有会话的处理器；2026-07-28 起的新协议（请求头 Mcp-Protocol-Version）走无会话的处理器。
+	// 两个处理器共用同一个 Server：工具处理函数每次都按请求头里的令牌确认身份，与会话无关。
+	stateful := mcp.NewStreamableHTTPHandler(get, &mcp.StreamableHTTPOptions{
 		Logger: cfg.Log, SessionTimeout: 30 * time.Minute, DisableLocalhostProtection: true, MaxRequestBodyBytes: 4 << 20,
+	})
+	stateless := mcp.NewStreamableHTTPHandler(get, &mcp.StreamableHTTPOptions{
+		Logger: cfg.Log, Stateless: true, DisableLocalhostProtection: true, MaxRequestBodyBytes: 4 << 20, PropagateRequestCancellation: true,
 	})
 	var lim limiter
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +107,11 @@ func Handler(cfg Config) http.Handler {
 		// 工具处理函数从请求头读身份；客户端 IP 由这里写入，不信任客户端自带的同名头
 		r.Header.Del("X-Lemi-Client-Ip")
 		r.Header.Set("X-Lemi-Client-Ip", web.ClientIP(r))
-		h.ServeHTTP(w, r)
+		if v := r.Header.Get("Mcp-Protocol-Version"); v >= NewProtocol {
+			stateless.ServeHTTP(w, r)
+			return
+		}
+		stateful.ServeHTTP(w, r)
 	})
 }
 

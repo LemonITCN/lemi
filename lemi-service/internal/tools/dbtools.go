@@ -752,12 +752,12 @@ func runQuery(env *Env, args json.RawMessage) (*Result, error) {
 
 func readResult(env *Env, args json.RawMessage) (*Result, error) {
 	var in struct {
-		ResultID string            `json:"result_id"`
-		Offset   int               `json:"offset"`
-		Limit    int               `json:"limit"`
-		Columns  []string          `json:"columns"`
-		Filters  []results.Filter  `json:"filters"`
-		OrderBy  []results.Order   `json:"order_by"`
+		ResultID string           `json:"result_id"`
+		Offset   int              `json:"offset"`
+		Limit    int              `json:"limit"`
+		Columns  []string         `json:"columns"`
+		Filters  []results.Filter `json:"filters"`
+		OrderBy  []results.Order  `json:"order_by"`
 	}
 	if err := bind(args, &in); err != nil {
 		return nil, err
