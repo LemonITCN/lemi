@@ -26,6 +26,8 @@ func init() {
 		s := conns.New(a.Store, a.Accounts, a.Settings, a.Box, a.Audit, a.Log, driver.SQLiteEnv{AllowedDirs: a.Cfg.SQLite.AllowedDirs, UploadDir: a.Cfg.Path("sqlite")})
 		a.Set("conns", s)
 		a.Web.AddMount(s.Routes)
+		a.Web.AddMount(s.DumpRoutes)
+		conns.Hub = a.Hub
 		return nil
 	}, Start: func(ctx context.Context, a *App) { a.Conns().Run(ctx) }})
 }
