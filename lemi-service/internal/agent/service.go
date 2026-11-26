@@ -420,7 +420,7 @@ func (s *Service) genTitle(convID, wsID, model, placeholder, text, userID string
 	if err != nil {
 		return
 	}
-	out, _, err := s.collectText(ctx, prov, llm.Request{Model: mdl.ID, System: titlePrompt, MaxTokens: 200, SessionID: convID,
+	out, _, err := s.collectText(ctx, prov, llm.Request{Model: mdl.ID, System: titlePrompt, MaxTokens: 1000, Effort: "low", SessionID: convID,
 		Messages: []llm.Message{{Role: llm.RoleUser, Parts: []llm.Part{{Type: "text", Text: truncateRunes(text, 2000)}}}}})
 	if err != nil {
 		return
