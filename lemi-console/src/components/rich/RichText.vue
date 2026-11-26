@@ -38,7 +38,7 @@ const segs = computed(() => splitBlocks(props.text).map((s) => (s.type === 'md' 
 .lm-md pre code { background: none; color: var(--text); padding: 0; font-size: 12px; }
 .lm-md blockquote { margin: 0 0 .7em; padding: 2px 12px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
 .lm-md table { border-collapse: collapse; margin: 0 0 .8em; font-size: 12.5px; display: block; overflow-x: auto; max-width: 100%; }
-.lm-md th, .lm-md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.lm-md th, .lm-md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; white-space: nowrap; }
 .lm-md th { background: var(--bg-soft); font-weight: 500; }
 .lm-md hr { border: 0; border-top: 1px solid var(--border); margin: 1em 0; }
 .lm-md .mm { border: 1px solid var(--border); border-radius: var(--radius-l); padding: 8px; margin: 10px 0; }

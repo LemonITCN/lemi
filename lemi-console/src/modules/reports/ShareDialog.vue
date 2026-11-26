@@ -31,6 +31,7 @@ async function create() {
   try {
     const r = await api.post(`/reports/${props.report.id}/share`, { password: password.value, expires_days: Number(days.value) })
     link.value = r.url?.startsWith('http') ? r.url : location.origin + r.path
+    password.value = ''
     emit('changed')
   } catch (e) { toast.error(errorText(e)) } finally { busy.value = false }
 }

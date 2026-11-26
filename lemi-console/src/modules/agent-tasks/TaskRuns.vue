@@ -104,10 +104,10 @@ function goReport(id: string) {
         <div class="cap tr-cap">{{ $t('tasks.transcript') }}</div>
         <div v-if="trError" class="lm-empty">{{ trError }}</div>
         <div v-else-if="trLoading && !messages.length" class="lm-empty">{{ $t('common.loading') }}</div>
-        <div v-else-if="!run.conversation_id" class="lm-empty">{{ $t('tasks.noTranscript') }}</div>
+        <div v-else-if="!run.conversation_id" class="lm-empty">{{ run.status === 'running' ? $t('tasks.runningHint') : $t('tasks.noTranscript') }}</div>
         <div v-else class="transcript"><MessageList :items="items" /></div>
       </template>
-      <div v-else-if="loaded" class="lm-empty">{{ $t('tasks.pickRun') }}</div>
+      <div v-else-if="loaded && runs.length" class="lm-empty">{{ $t('tasks.pickRun') }}</div>
     </div>
   </div>
 </template>

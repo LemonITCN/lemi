@@ -132,8 +132,10 @@ const missing = computed(() => (report.value?.snapshot?.missing || []).length)
         <Btn size="sm" variant="primary" :loading="saving" @click="save">{{ $t('common.save') }}</Btn>
       </template>
       <template v-else>
-        <Icon name="report" :size="15" />
-        <span class="tt lm-ellipsis">{{ report?.title }}</span>
+        <template v-if="!ui.isMobile">
+          <Icon name="report" :size="15" />
+          <span class="tt lm-ellipsis">{{ report?.title }}</span>
+        </template>
         <span v-if="report?.share" class="lm-badge accent"><Icon name="link" :size="11" />{{ $t('reports.shared') }}</span>
         <span v-if="missing" class="lm-badge warning">{{ $t('reports.missingN', { n: missing }) }}</span>
         <span class="lm-spacer" />

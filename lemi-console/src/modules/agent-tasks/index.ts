@@ -4,5 +4,5 @@ import { defineModule } from '@/modules/registry'
 export default defineModule({
   name: 'agent-tasks',
   routes: [{ path: 'agent-tasks/:id?', name: 'agent-tasks', component: () => import('./TasksView.vue') }],
-  rail: [{ id: 'agent-tasks', icon: 'task', label: 'tasks.title', order: 30, route: '/agent-tasks' }],
+  rail: [{ id: 'agent-tasks', icon: 'task', label: 'tasks.title', order: 30, route: '/agent-tasks', mobile: true }],
 })

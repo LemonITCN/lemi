@@ -131,7 +131,7 @@ const showList = computed(() => !ui.isMobile || !id.value)
             <span class="sub lm-ellipsis">{{ describe(tk.schedule) }}<template v-if="!tk.enabled"> · {{ $t('tasks.paused') }}</template></span>
           </span>
         </button>
-        <div v-if="loaded && !tasks.length" class="lm-empty">{{ canEdit ? $t('tasks.emptyAdmin') : $t('tasks.empty') }}</div>
+        <div v-if="loaded && !tasks.length" class="lm-empty">{{ $t('tasks.noTasks') }}</div>
       </div>
     </nav>
 
@@ -207,5 +207,7 @@ const showList = computed(() => !ui.isMobile || !id.value)
 @media (max-width: 760px) {
   .nav { width: auto; flex: 1; border-right: 0; }
   .inner { padding: 12px 16px 40px; }
+  .title { flex-wrap: wrap; }
+  .title h2 { flex-basis: 100%; white-space: normal; }
 }
 </style>

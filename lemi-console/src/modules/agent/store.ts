@@ -144,10 +144,14 @@ export const useAgent = defineStore('agent', () => {
     return c
   }
 
-  function newChat() {
+  /** 回到空白新对话；forget 为真时（用户主动点「新对话」）也不再自动恢复上次的会话。 */
+  function newChat(forget = false) {
     resetView()
     convId.value = ''
     conv.value = null
+    if (forget && wsId.value) {
+      try { localStorage.removeItem('lemi.agent.conv.' + wsId.value) } catch { /* 忽略 */ }
+    }
   }
 
   async function patch(id: string, body: any) {
@@ -394,9 +398,26 @@ export const useAgent = defineStore('agent', () => {
     models.value = []
   })
 
+  // 记住每个空间最后打开的会话，刷新页面或重新打开面板时接着看
+  const lastKey = () => 'lemi.agent.conv.' + (wsId.value || '')
+  watch(convId, (id) => {
+    if (!wsId.value || !id) return
+    try { localStorage.setItem(lastKey(), id) } catch { /* 存储不可用时不记 */ }
+  })
+  async function restore() {
+    if (convId.value || !wsId.value) return
+    let id = ''
+    try { id = localStorage.getItem(lastKey()) || '' } catch { /* 忽略 */ }
+    if (!id) return
+    try { await open(id) } catch {
+      newChat()
+      try { localStorage.removeItem(lastKey()) } catch { /* 忽略 */ }
+    }
+  }
+
   return {
     conversations, listLoaded, convId, conv, messages, todos, usage, summary, runId, runState, runError, draft, pending, subagents, notice, retrying,
     compacting, queuedTexts, models, defaultModel, configured, modelErrors, loading, running,
-    loadModels, loadList, open, newChat, create, patch, remove, send, stop, respond, reloadMessages,
+    loadModels, loadList, open, newChat, create, patch, remove, send, stop, respond, reloadMessages, restore,
   }
 })

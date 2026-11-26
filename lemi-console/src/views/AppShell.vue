@@ -120,10 +120,10 @@ const initial = computed(() => (session.current?.name || '?').slice(0, 1).toUppe
           <div v-if="rightComp" v-show="mobileView === 'ai'" class="m-screen"><component :is="rightComp" /></div>
         </div>
         <nav class="m-nav">
-          <button v-for="r in rail.filter((x) => x.mobile)" :key="r.id" :class="{ on: mobileView === 'panel' && ui.rail === r.id }" @click="clickRail(r)">
+          <button v-for="r in rail.filter((x) => x.mobile)" :key="r.id" :class="{ on: r.route ? route.path.startsWith(r.route) : mobileView === 'panel' && ui.rail === r.id }" @click="clickRail(r)">
             <Icon :name="r.icon" :size="20" /><span>{{ $t(r.label) }}</span>
           </button>
-          <button :class="{ on: mobileView === 'work' }" @click="setMobile('work'); route.name !== 'workbench' && router.push('/')"><Icon name="tabs" :size="20" /><span>{{ $t('shell.workbench') }}</span></button>
+          <button :class="{ on: mobileView === 'work' && !rail.some((x) => x.route && route.path.startsWith(x.route)) }" @click="setMobile('work'); route.name !== 'workbench' && router.push('/')"><Icon name="tabs" :size="20" /><span>{{ $t('shell.workbench') }}</span></button>
           <button v-if="rp" :class="{ on: mobileView === 'ai' }" @click="setMobile('ai')"><Icon :name="rp.icon" :size="20" /><span>{{ $t(rp.label) }}</span></button>
         </nav>
       </template>

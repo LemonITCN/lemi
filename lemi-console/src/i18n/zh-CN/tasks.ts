@@ -24,6 +24,6 @@ export default {
   enabled: '按计划运行',
   trigger: { schedule: '按计划', manual: '手动' },
   status: { running: '运行中', done: '成功', error: '失败', stopped: '已停止', waiting: '等待中' },
-  noRuns: '还没有运行记录', pickRun: '选一条运行记录', noTranscript: '这次运行没有对话记录',
+  noTasks: '暂无任务', noRuns: '还没有运行记录', pickRun: '选一条运行记录', noTranscript: '这次运行没有对话记录', runningHint: '正在运行，结束后显示完整对话',
   summary: '结果', transcript: '完整对话', openReport: '打开报告',
 }

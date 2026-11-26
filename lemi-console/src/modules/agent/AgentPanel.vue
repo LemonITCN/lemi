@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 智能体右侧面板：会话列表与新建、消息流、计划清单、待处理的审批与提问、输入框。
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
 import IconBtn from '@/components/ui/IconBtn.vue'
@@ -47,8 +47,9 @@ const activeSubs = computed(() => agent.subagents.filter((s) => !s.done))
 async function init() {
   if (!session.current || !canUse.value) return
   try {
-    await Promise.all([agent.listLoaded ? null : agent.loadList(), agent.models.length ? null : agent.loadModels()])
+    await Promise.all([agent.listLoaded ? null : agent.loadList(), agent.models.length ? null : agent.loadModels(), agent.restore()])
   } catch (e) { toast.error(errorText(e)) }
+  scrollBottom(true)
 }
 onMounted(init)
 watch(() => session.current?.id, () => nextTick(init))
@@ -61,13 +62,13 @@ async function pick(id: string) {
 
 function newChat() {
   showList.value = false
-  agent.newChat()
+  agent.newChat(true)
   nextTick(() => composer.value?.focus())
 }
 
 const convMenu = computed<MenuItem[]>(() => agent.conv ? [
   { label: t('common.rename'), icon: 'edit', run: () => { newTitle.value = agent.conv!.title; renaming.value = true } },
-  { label: t('agent.archive'), icon: 'archive', run: async () => { try { await agent.patch(agent.conv!.id, { archived: true }); agent.newChat() } catch (e) { toast.error(errorText(e)) } } },
+  { label: t('agent.archive'), icon: 'archive', run: async () => { try { await agent.patch(agent.conv!.id, { archived: true }); agent.newChat(true) } catch (e) { toast.error(errorText(e)) } } },
   { separator: true },
   { label: t('common.delete'), icon: 'trash', danger: true, run: async () => {
     if (await confirmDialog({ title: t('agent.deleteTitle'), message: t('agent.deleteConfirm', { name: agent.conv!.title }), danger: true, okText: t('common.delete') })) {
@@ -80,19 +81,39 @@ async function rename() {
   try { await agent.patch(agent.conv!.id, { title: newTitle.value }); renaming.value = false } catch (e) { toast.error(errorText(e)) }
 }
 
-// 自动滚到底：用户停在底部附近时跟随新内容
-let stick = true
+// 自动滚到底：用户停在底部附近时跟随新内容。图表、表格是异步渲染的，内容变高不会触发滚动事件，
+// 所以再用 ResizeObserver 盯住内容高度。
+const stick = ref(true)
+const inner = ref<HTMLDivElement>()
+// 只有用户自己滚动（滚轮、触摸、拖滚动条、键盘）才取消跟随；内容变化、滚动锚定引起的滚动不算
+let userAt = 0
+function markUser() { userAt = Date.now() }
 function onScroll() {
   const el = scroller.value
-  if (el) stick = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  if (!el) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) stick.value = true
+  else if (Date.now() - userAt < 1500) stick.value = false
 }
 function scrollBottom(force = false) {
   nextTick(() => {
     const el = scroller.value
-    if (el && (force || stick)) el.scrollTop = el.scrollHeight
+    if (el && (force || stick.value)) el.scrollTop = el.scrollHeight
   })
 }
 watch(() => [items.value.length, agent.draft?.text.length, agent.draft?.tools.length, agent.pending.length], () => scrollBottom())
+const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { if (stick.value) scrollBottom() }) : null
+watch(inner, (el, old) => {
+  if (old) ro?.unobserve(old)
+  if (el) ro?.observe(el)
+})
+onBeforeUnmount(() => ro?.disconnect())
+function jumpLatest() {
+  stick.value = true
+  scrollBottom(true)
+}
+
+// 待办全部完成后自动收起；出现新的未完成项时展开
+watch(() => agent.todos.length > 0 && doneTodos.value === agent.todos.length, (all) => { todoOpen.value = !all })
 
 const noticeText = computed(() => {
   const n = agent.notice
@@ -153,7 +174,9 @@ const noticeText = computed(() => {
         </ul>
       </div>
 
-      <div ref="scroller" class="scroll" @scroll="onScroll">
+      <div class="scroll-wrap">
+      <div ref="scroller" class="scroll" @scroll="onScroll" @wheel.passive="markUser" @touchmove.passive="markUser" @pointerdown="markUser" @keydown="markUser">
+        <div ref="inner">
         <div v-if="agent.loading" class="lm-empty">{{ $t('common.loading') }}</div>
         <div v-else-if="!items.length && !agent.running" class="empty">
           <Icon name="assistant" :size="30" :stroke="1.2" />
@@ -181,9 +204,12 @@ const noticeText = computed(() => {
         <div v-if="agent.runState === 'stopped'" class="notice">{{ $t('agent.stopped') }}</div>
         <div v-if="agent.runError" class="err"><Icon name="error" :size="14" />{{ agent.runError }}</div>
         <div v-for="(q, i) in agent.queuedTexts" :key="i" class="queued"><Icon name="clock" :size="12" />{{ q }}</div>
+        </div>
+      </div>
+      <button v-if="!stick && items.length" class="latest" :title="$t('agent.jumpLatest')" @click="jumpLatest"><Icon name="arrow-down" :size="14" /></button>
       </div>
 
-      <div v-if="agent.pending.length" class="pending">
+      <div v-if="agent.pending.length" class="interactions">
         <InteractionCard v-for="p in agent.pending" :key="p.id" :it="p" />
       </div>
       <Composer ref="composer" />
@@ -222,7 +248,10 @@ const noticeText = computed(() => {
 .todo li.in_progress .box { border-color: var(--accent); }
 .pulse { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: pl 1.2s ease-in-out infinite; }
 @keyframes pl { 50% { opacity: .3; } }
+.scroll-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 .scroll { flex: 1; overflow: auto; padding: 8px 12px 12px; min-height: 0; }
+.latest { position: absolute; right: 14px; bottom: 10px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text-2); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-m, 0 2px 8px rgba(0, 0, 0, .12)); }
+.latest:hover { color: var(--text); background: var(--bg-hover); }
 .empty { display: flex; flex-direction: column; align-items: center; text-align: center; color: var(--text-3); padding: 48px 16px 24px; gap: 6px; }
 .et { margin: 6px 0 0; font-size: 14px; font-weight: 600; color: var(--text-2); }
 .ed { margin: 0; font-size: 12.5px; line-height: 1.6; max-width: 300px; }
@@ -235,7 +264,7 @@ const noticeText = computed(() => {
 .notice { font-size: 12px; color: var(--text-3); padding: 4px 2px; }
 .err { display: flex; align-items: flex-start; gap: 6px; color: var(--danger); background: var(--danger-bg); border-radius: var(--radius-m); padding: 8px 10px; font-size: 12.5px; margin: 6px 0; }
 .queued { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-m); padding: 5px 8px; margin: 4px 0; }
-.pending { flex: none; padding: 8px 10px 0; display: flex; flex-direction: column; gap: 8px; max-height: 55%; overflow: auto; }
+.interactions { flex: none; padding: 8px 10px 0; display: flex; flex-direction: column; gap: 8px; max-height: 55%; overflow: auto; }
 .spin { width: 11px; height: 11px; border: 1.5px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: sp .8s linear infinite; flex: none; }
 @keyframes sp { to { transform: rotate(360deg); } }
 </style>

@@ -6,12 +6,15 @@ import IconBtn from '@/components/ui/IconBtn.vue'
 import Menu, { type MenuItem } from '@/components/ui/Menu.vue'
 import Switch from '@/components/ui/Switch.vue'
 import InfoTip from '@/components/ui/InfoTip.vue'
+import { PopoverRoot, PopoverTrigger, PopoverPortal, PopoverContent } from 'reka-ui'
 import { useAgent } from './store'
 import { useToast } from '@/stores/toast'
+import { useUI } from '@/stores/ui'
 import { errorText, i18n } from '@/i18n'
 
 const agent = useAgent()
 const toast = useToast()
+const ui = useUI()
 const t = i18n.global.t
 const text = ref('')
 const ta = ref<HTMLTextAreaElement>()
@@ -117,18 +120,20 @@ defineExpose({ focus: () => ta.value?.focus(), insert: (s: string) => { text.val
         <Menu v-if="efforts.length" :items="effortItems" :width="160" side="top">
           <button class="pill" :title="$t('agent.effort.label')"><span>{{ settings.effort ? $t('agent.effort.' + settings.effort, settings.effort) : $t('agent.effort.default') }}</span><Icon name="chevron-down" :size="11" /></button>
         </Menu>
-        <label class="plan-sw"><Switch v-model="plan" /><span>{{ $t('agent.planMode') }}</span><InfoTip :text="$t('agent.planModeHint')" /></label>
+        <label class="plan-sw"><Switch v-model="plan" /><span>{{ ui.isMobile ? $t('agent.plan') : $t('agent.planMode') }}</span><InfoTip :text="$t('agent.planModeHint')" /></label>
         <span class="lm-spacer" />
-        <InfoTip v-if="agent.usage?.context" :width="240">
-          <template #default>
-            <div class="usage">
-              <div>{{ $t('agent.usage.context', { pct: ctxPct, n: k(agent.usage?.context) }) }}</div>
-              <div v-if="total">{{ $t('agent.usage.total', { i: k(total.input), o: k(total.output), c: k(total.cache_read), r: total.requests }) }}</div>
-              <div class="muted">{{ $t('agent.usage.hint') }}</div>
-            </div>
-          </template>
-        </InfoTip>
-        <span v-if="agent.usage?.context" class="ring" :style="{ '--p': ctxPct }" :title="ctxPct + '%'" />
+        <PopoverRoot v-if="agent.usage?.context">
+          <PopoverTrigger class="ring-btn" :aria-label="$t('agent.usage.label')"><span class="ring" :style="{ '--p': ctxPct }" /></PopoverTrigger>
+          <PopoverPortal>
+            <PopoverContent class="info-pop" side="top" align="end" :side-offset="6" :collision-padding="12" :style="{ maxWidth: '260px' }">
+              <div class="usage">
+                <div>{{ $t('agent.usage.context', { pct: ctxPct, n: k(agent.usage?.context) }) }}</div>
+                <div v-if="total">{{ $t('agent.usage.total', { i: k(total.input), o: k(total.output), c: k(total.cache_read), r: total.requests }) }}</div>
+                <div class="muted">{{ $t('agent.usage.hint') }}</div>
+              </div>
+            </PopoverContent>
+          </PopoverPortal>
+        </PopoverRoot>
         <IconBtn v-if="agent.running" icon="stop" :label="$t('agent.stop')" class="stop" @click="agent.stop()" />
         <Menu v-if="agent.running && text.trim()" :items="sendItems" :width="200" side="top" align="end">
           <button class="send" :disabled="sending"><Icon name="send" :size="15" /></button>
@@ -146,13 +151,16 @@ defineExpose({ focus: () => ta.value?.focus(), insert: (s: string) => { text.val
 .box.plan { border-style: dashed; }
 textarea { display: block; width: 100%; border: 0; outline: none; resize: none; background: none; padding: 10px 12px 4px; font: inherit; font-size: 13.5px; line-height: 1.5; max-height: 220px; color: var(--text); }
 .bar { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px 8px; min-width: 0; }
-.pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border-radius: 12px; border: 0; background: none; font-size: 12px; color: var(--text-2); max-width: 150px; min-width: 0; }
+.pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border-radius: 12px; border: 0; background: none; font-size: 12px; color: var(--text-2); max-width: 150px; min-width: 0; white-space: nowrap; flex: none; }
+.pill:first-child { flex: 0 1 auto; }
 .pill:hover { background: var(--bg-hover); color: var(--text); }
 .plan-sw { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); margin-left: 4px; white-space: nowrap; }
 .send { width: 28px; height: 28px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
 .send:disabled { background: var(--bg-active); color: var(--text-3); }
 .stop { color: var(--danger); }
-.ring { width: 16px; height: 16px; border-radius: 50%; flex: none; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--bg-active) 0); -webkit-mask: radial-gradient(circle 5px, transparent 98%, #000 100%); mask: radial-gradient(circle 5px, transparent 98%, #000 100%); }
+.ring-btn { border: 0; background: none; padding: 4px; display: inline-flex; border-radius: 50%; }
+.ring-btn:hover { background: var(--bg-hover); }
+.ring { width: 16px; height: 16px; border-radius: 50%; flex: none; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--border-strong) 0); -webkit-mask: radial-gradient(circle 5px, transparent 98%, #000 100%); mask: radial-gradient(circle 5px, transparent 98%, #000 100%); }
 .usage { display: flex; flex-direction: column; gap: 3px; }
 .usage .muted { color: var(--text-3); font-size: 11.5px; }
 </style>

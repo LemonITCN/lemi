@@ -24,6 +24,6 @@ export default {
   enabled: 'Run on schedule',
   trigger: { schedule: 'Scheduled', manual: 'Manual' },
   status: { running: 'Running', done: 'Succeeded', error: 'Failed', stopped: 'Stopped', waiting: 'Waiting' },
-  noRuns: 'No runs yet', pickRun: 'Pick a run', noTranscript: 'This run has no conversation',
+  noTasks: 'No tasks', noRuns: 'No runs yet', pickRun: 'Pick a run', noTranscript: 'This run has no conversation', runningHint: 'Running. The full conversation appears when it finishes.',
   summary: 'Result', transcript: 'Full conversation', openReport: 'Open report',
 }

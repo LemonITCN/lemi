@@ -134,15 +134,15 @@ async function save() {
           <span class="lm-label">{{ $t('tasks.day') }}<InfoTip :text="$t('tasks.dayHint')" /></span>
           <select v-model.number="spec.day" class="lm-select"><option v-for="d in 31" :key="d" :value="d">{{ $t('tasks.dayN', { n: d }) }}</option></select>
         </div>
-        <div v-if="spec.kind === 'daily' || spec.kind === 'weekly' || spec.kind === 'monthly'" class="lm-field">
-          <span class="lm-label">{{ $t('tasks.time') }}</span>
-          <input v-model="spec.time" type="time" class="lm-select" />
-        </div>
         <div v-if="spec.kind === 'weekly'" class="lm-field full">
           <span class="lm-label">{{ $t('tasks.weekdays') }}</span>
           <div class="days">
             <button v-for="d in [1, 2, 3, 4, 5, 6, 0]" :key="d" type="button" class="day" :class="{ on: spec.weekdays?.includes(d) }" @click="toggleDay(d)">{{ $t('tasks.wd.' + d) }}</button>
           </div>
+        </div>
+        <div v-if="spec.kind === 'daily' || spec.kind === 'weekly' || spec.kind === 'monthly'" class="lm-field">
+          <span class="lm-label">{{ $t('tasks.time') }}</span>
+          <input v-model="spec.time" type="time" class="lm-select" />
         </div>
         <div v-if="spec.kind === 'cron'" class="lm-field">
           <span class="lm-label">{{ $t('tasks.cron') }}<InfoTip :width="280" :text="$t('tasks.cronHint')" /></span>
