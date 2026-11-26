@@ -1,0 +1,12 @@
+<script setup lang="ts">
+withDefaults(defineProps<{ size?: number }>(), { size: 28 })
+</script>
+
+<template>
+  <svg :width="size" :height="size" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="#1b1f24" />
+    <ellipse cx="32" cy="18" rx="16" ry="6" fill="none" stroke="#c6e04a" stroke-width="4" />
+    <path d="M16 18v28c0 3.3 7.2 6 16 6s16-2.7 16-6V18" fill="none" stroke="#c6e04a" stroke-width="4" />
+    <path d="M16 32c0 3.3 7.2 6 16 6s16-2.7 16-6" fill="none" stroke="#c6e04a" stroke-width="4" />
+  </svg>
+</template>
