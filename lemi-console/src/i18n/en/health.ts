@@ -1,0 +1,16 @@
+export default {
+  title: 'Health checks',
+  intro: 'Lemi connects to each database on a schedule (through SSH tunnels / proxies) and runs SELECT 1, recording latency and errors. A connection goes down after the configured number of consecutive failures and comes back after one success; notifications are sent only when the state changes. Records are kept for 30 days.',
+  status: { up: 'Up', down: 'Down', unknown: 'Unknown', disabled: 'Off' },
+  pick: 'Choose a connection on the left', empty: 'No connections in this workspace', checkNow: 'Check now', checking: 'Checking…',
+  lastCheck: 'Last check {t}', latency: 'Latency', never: 'Not checked yet',
+  range: { day: 'Today', '7d': '7 days', '30d': '30 days' },
+  uptime: 'Uptime', checks: 'Checks', failures: 'Failures', avgLatency: 'Avg latency', p95: 'P95 latency', maxLatency: 'Max latency',
+  noData: 'No checks in this period', timeline: 'Timeline', latencyChart: 'Latency', recent: 'Recent checks', onlyFailed: 'Failures only', loadMore: 'Load more',
+  manual: 'Manual', ok: 'OK', fail: 'Failed',
+  bucket: { up: 'All succeeded', down: 'All failed', partial: 'Some failed', none: 'No checks' },
+  config: 'Check settings', enabled: 'Enable health checks', interval: 'Interval (s)', timeout: 'Timeout (s)', threshold: 'Consecutive failures before down',
+  channels: 'Notify on state change', defaultHint: 'Using defaults: check every 60 seconds, 10 second timeout, down after 3 consecutive failures.',
+  intervalHelp: '10 seconds to 1 day.', timeoutHelp: '1–120 seconds, not longer than the interval.',
+  tree: 'Health',
+}

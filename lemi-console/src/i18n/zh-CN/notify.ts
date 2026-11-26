@@ -1,0 +1,17 @@
+export default {
+  channels: '通知渠道', channelsIntro: '备份计划、健康检查、定时任务在需要通知时选择这里的渠道。每个渠道还可以只订阅部分事件。密钥类字段（地址里的令牌、口令、签名密钥）只能写入，保存后不再显示。',
+  new: '新建渠道', edit: '编辑渠道', empty: '还没有通知渠道', kind: '类型', chooseKind: '选择渠道类型',
+  events: '订阅的事件', eventsAll: '全部事件', eventsHelp: '不勾选表示接收全部事件。备份计划、健康检查等仍要先选中这个渠道才会发到这里。',
+  test: '测试发送', testing: '正在发送…', testOk: '已发送（{ms} ms）', testFailed: '发送失败：{e}',
+  deleteConfirm: '确定删除渠道「{name}」吗？选中它的备份计划与健康检查将不再通过它发通知。',
+  secretKept: '已设置，留空则保持不变', clearSecret: '清除', urlHost: '地址主机',
+  logs: '发送记录', logsEmpty: '还没有发送记录', attempts: '尝试 {n} 次',
+  logStatus: { sending: '发送中', ok: '已发送', failed: '失败' },
+  pickChannels: '选择渠道', noChannels: '还没有通知渠道', manageChannels: '管理通知渠道', none: '不通知',
+  smtp: '系统邮件服务器', smtpIntro: '用于找回口令、安全事件提醒（登录锁定、新设备登录、改口令、关闭两步验证）以及选择「使用系统邮件服务器」的邮件渠道。',
+  smtpHost: 'SMTP 主机', smtpPort: '端口', smtpTls: '加密方式', smtpUser: '用户名', smtpPass: '口令', smtpFrom: '发件人',
+  tls: { ssl: 'SSL / TLS（通常 465）', starttls: 'STARTTLS（通常 587）', none: '不加密（仅限不带口令的内网中继）' },
+  smtpTest: '发测试邮件', smtpTestTo: '收件人', smtpTestToPh: '留空发给自己的邮箱', smtpSent: '测试邮件已发出', smtpNotSet: '未配置', smtpClear: '清空设置',
+  smtpClearConfirm: '确定清空系统邮件服务器吗？安全事件提醒将不再发送。',
+  personal: '安全事件提醒会发到你账号里的邮箱。在「账号」里修改邮箱。',
+}
