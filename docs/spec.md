@@ -461,7 +461,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 - 来源：`.github/workflows/mysql-tools.yml` 手动触发，从 MySQL 官方 CDN 下载各平台归档 → 校验官方签名/摘要 → 只取 `mysqldump`、`mysql` 及其依赖的动态库（Linux 用 ldd、macOS 用 otool 自动收集）→ 打包成 `mysql-client-<版本>-<os>-<arch>.tar.gz|zip` → 计算 SHA-256 → 发布到本仓库 `tools-mysql-<版本>` Release，附 GPL 说明与对应源码下载地址。
 - 平台：linux-amd64、linux-arm64、darwin-arm64、darwin-amd64、windows-amd64（windows-arm64 在 Win11 上仿真运行 windows-amd64 版本）。
-- 版本：8.0（服务于 5.7 与 8.0 服务器）、8.4 LTS、9.x 最新。服务器版本 → 客户端版本映射写在清单里。
+- 版本：8.0（服务于 5.7 与 8.0 服务器）、8.4 LTS、9.7 LTS；9 及以后的服务器用同主版本里最新的客户端（创新版已改为年份版本号，如 26.x，需要时把对应版本加进工作流）。某个平台官方没有包时（例如 8.4、9.7 的最新版没有 Intel Mac 包），退回同系列里有包的版本。口令经临时 `--defaults-file`（0600，用完删除）传入，不读服务器上的 /etc/my.cnf 与 ~/.my.cnf。
 - 清单 `lemi-service/internal/dumptools/manifest.json`（随代码发布）：每个 版本 × 平台 的文件名与 SHA-256。Lemi 下载 `<LEMI_TOOLS_BASE_URL>/<文件名>`，校验 SHA-256 后解压到 `<数据目录>/tools/mysql-<版本>/`。校验失败删除并报错。
 - 也可以在设置里指定服务器上已安装的 mysqldump 路径（Lemi 读取其版本号）。Docker 镜像内预装。
 - Docker 预装位置：`/data/tools` 会被数据卷覆盖，所以镜像构建时（docker/fetch-mysql-tools.sh，按本清单下载并校验 SHA-256）装在 `/opt/lemi/tools/mysql-<版本>/linux-<架构>/`（归档只有一个顶层目录时去掉这一层），镜像设置环境变量 `LEMI_TOOLS_PREINSTALLED=/opt/lemi/tools`。dumptools 查找某个版本时，先查 `$LEMI_TOOLS_PREINSTALLED/mysql-<版本>/<系统>-<架构>/`（只读，不下载、不删除），没有再查 `<数据目录>/tools/mysql-<版本>/`，都没有才下载。
