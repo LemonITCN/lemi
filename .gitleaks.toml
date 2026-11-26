@@ -1,0 +1,14 @@
+# gitleaks 配置（CI 的 gitleaks 任务与本机扫描都会自动读取仓库根目录的这个文件）。
+# 在默认规则之上，只放行单元测试里明显是假数据的固定口令；每一项都要同时满足「测试文件」与「完整匹配这个值」。
+# 新增放行项前先确认它不是任何真实环境的口令或密钥，并在 description 里写明出处。
+title = "Lemi"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "internal/web/web_test.go：HTTP 层安全测试给内存测试实例用的假口令"
+condition = "AND"
+paths = ['''_test\.go$''']
+regexTarget = "secret"
+regexes = ['''^Lemi-Strong-2026$''']
