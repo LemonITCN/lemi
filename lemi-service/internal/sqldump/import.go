@@ -356,6 +356,13 @@ func Import(ctx context.Context, conn *sql.Conn, r io.Reader, opts ImportOptions
 		im.progress(true)
 		return res, err
 	}
+	if im.inFileTx {
+		// 文件自己开的事务到末尾都没提交（Navicat 文件在一张表的数据中间被截断就是这样）：
+		// 与 mysql 客户端断开时一样回滚，并报不完整。
+		_ = im.exec("ROLLBACK")
+		im.progress(true)
+		return res, fmt.Errorf("%w（文件末尾的事务没有 COMMIT，已回滚）", ErrIncomplete)
+	}
 	if err := im.commit(); err != nil {
 		return res, isCanceled(ctx, err)
 	}

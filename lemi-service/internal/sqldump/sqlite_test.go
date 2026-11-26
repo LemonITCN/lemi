@@ -568,6 +568,19 @@ PRAGMA foreign_keys = true;
 	if title != "it's" {
 		t.Fatal(title)
 	}
+
+	// 在 BEGIN 之后、COMMIT 之前截断：文件自己的事务没提交，必须回滚并报不完整。
+	cut := src[:strings.Index(src, "COMMIT;")]
+	dst2 := openLite(t, filepath.Join(t.TempDir(), "navcut.db"))
+	res, err = Import(context.Background(), dst2, strings.NewReader(cut), ImportOptions{Dialect: SQLite})
+	if !errors.Is(err, ErrIncomplete) || res.Complete {
+		t.Fatalf("应报 ErrIncomplete，得到 %v %+v", err, res)
+	}
+	var n int
+	dst2.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM "alert"`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("未提交的数据应回滚，得到 %d 行", n)
+	}
 }
 
 func TestSQLiteImportRejectsAttach(t *testing.T) {

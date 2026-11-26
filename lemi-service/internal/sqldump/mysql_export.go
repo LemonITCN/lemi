@@ -410,7 +410,12 @@ func (e *mysqlExporter) dumpTable(db string, t myTable) (TableManifest, error) {
 		}
 	}
 	if !e.opts.NoStructure {
-		m, err := e.showCreate("SHOW CREATE TABLE " + q)
+		// MariaDB 对序列执行 SHOW CREATE TABLE 返回的是表形式（丢了 START/INCREMENT 等参数），要用 SHOW CREATE SEQUENCE。
+		show := "SHOW CREATE TABLE "
+		if isSeq {
+			show = "SHOW CREATE SEQUENCE "
+		}
+		m, err := e.showCreate(show + q)
 		if err != nil {
 			return tm, err
 		}

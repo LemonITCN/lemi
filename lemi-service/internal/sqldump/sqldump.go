@@ -29,6 +29,14 @@
 //   - SQLite：没有 INTEGER PRIMARY KEY 的 rowid 表在 INSERT 里带上 rowid（Navicat 不带，还原后 rowid 会重新编号）；
 //     自增值写 `UPDATE "sqlite_sequence" ...` 并在没有该行时补一行；含 \0、\r 或非法 UTF-8 的 TEXT 写成 CAST(X'..' AS TEXT)。
 //
+// 已知限制（服务器自身或格式决定，导出前后的 TableChecksum 能发现）：
+//
+//   - MySQL 5.7 的 JSON 文本表示有损：double -0.0 输出成 -0，读回来是整数 0（mysqldump 同样）。8.0+ 与 MariaDB 没有这个问题。
+//   - MariaDB 系统版本表只导当前行（历史行无法用普通 INSERT 写回）；序列只恢复参数与下一个值（缓存号段会跳过，与 mariadb-dump 一致）。
+//   - 例程的 character_set_client / collation_connection 按导入会话（utf8mb4）重建，正文文字不变。
+//   - 例程的 sql_mode 去掉 NO_AUTO_CREATE_USER（8.0 起不存在，保留会导致 5.7 的备份还原到 8.0 时 SET 报错）。
+//   - 导入时库名映射只作用于 CREATE / DROP / ALTER DATABASE 与 USE，不改写语句里写死的 `库`.`表` 限定名。
+//
 // 导出与导入都会改动传入连接的会话状态（字符集、时区、sql_mode、当前库、事务），结束时尽量恢复；
 // 调用方应当给它们一条专用连接，用完关闭。连接不能开 allowAllFiles / LOCAL INFILE。
 package sqldump

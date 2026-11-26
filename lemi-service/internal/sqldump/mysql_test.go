@@ -123,10 +123,15 @@ func buildMyFixture(t testing.TB, s *myServer, c *sql.Conn, db string) {
 	if !maria && !v.atLeast(5, 7, 8) {
 		t.Fatalf("测试需要 MySQL 5.7.8+ 或 MariaDB")
 	}
+	negZero := `, "f": -0.0`
+	if !maria && !my8 {
+		// MySQL 5.7 把 JSON 里的 double -0.0 输出成 -0，读回来就成了整数 0（服务器自身的文本表示有损，见包注释）。
+		negZero = ""
+	}
 	stmts = append(stmts,
 		`CREATE TABLE jsons (id INT PRIMARY KEY, j JSON)`,
-		`INSERT INTO jsons VALUES (1, '{"a": [1, 2, {"b": "中文😀"}], "c": null, "d": 1.5e300, "e": "\\u0000 \\\\ \\"", "f": -0.0}'),
-			(2, '[]'), (3, 'null'), (4, '"str"'), (5, NULL), (6, '{"k": 12345678901234567890}')`,
+		`INSERT INTO jsons VALUES (1, '{"a": [1, 2, {"b": "中文😀"}], "c": null, "d": 1.5e300, "e": "\\u0000 \\\\ \\""`+negZero+`}'),
+			(2, '[]'), (3, 'null'), (4, '"str"'), (5, NULL), (6, '{"k": 12345678901234567890, "x": 1.0, "y": 0.1}')`,
 	)
 	if my8 && v.atLeast(8, 0, 23) || maria && v.atLeast(10, 3, 3) {
 		stmts = append(stmts, `CREATE TABLE invis (id INT PRIMARY KEY, a INT, h INT INVISIBLE DEFAULT 7)`,
@@ -208,6 +213,7 @@ func TestMySQLMatrix(t *testing.T) {
 			t.Run("random", func(t *testing.T) { testMyRandom(t, s) })
 			t.Run("truncated", func(t *testing.T) { testMyTruncated(t, s, src) })
 			t.Run("cancel_and_kill", func(t *testing.T) { testMyCancelKill(t, s) })
+			t.Run("navicat_file", func(t *testing.T) { testMyNavicatFile(t, s) })
 			if s.container != "" {
 				t.Run("official_client_imports_ours", func(t *testing.T) { testMyOfficialClient(t, s, src) })
 				t.Run("we_import_mysqldump", func(t *testing.T) { testMyImportMysqldump(t, s, src) })
@@ -424,6 +430,17 @@ func testMyImportMysqldump(t *testing.T, s *myServer, src string) {
 	// 与官方客户端导入同一个文件的结果逐项比对（mysqldump 自己会丢 FLOAT 精度，所以不和源库比 FLOAT 列）
 	compareDBs(t, s.conn(t, "", false), ref, s.conn(t, "", false), ours, nil)
 	compareDBs(t, s.conn(t, "", false), src, s.conn(t, "", false), ours, map[string]bool{"nums": true})
+	// --databases 产物带 CREATE DATABASE /*!32312 IF NOT EXISTS*/ 与 USE，用库名映射导到新库
+	dumpDB := s.dockerDump(t, "--databases", src)
+	if !bytes.Contains(dumpDB, []byte("CREATE DATABASE /*!32312 IF NOT EXISTS*/ `"+src+"`")) {
+		t.Fatalf("mysqldump --databases 输出不含预期的 CREATE DATABASE: %.2000s", dumpDB)
+	}
+	mapped := src + "_mapped"
+	t.Cleanup(func() {
+		s.conn(t, "", false).ExecContext(context.Background(), "DROP DATABASE IF EXISTS "+quoteMySQLIdent(mapped))
+	})
+	importMy(t, adm, dumpDB, ImportOptions{DatabaseMap: map[string]string{src: mapped}})
+	compareDBs(t, s.conn(t, "", false), ref, s.conn(t, "", false), mapped, nil)
 	// 截断的 mysqldump 文件必须报错
 	end := bytes.LastIndex(dump, []byte("-- Dump completed"))
 	cut := s.newDB(t, adm, "mdcut")
@@ -465,7 +482,7 @@ func makeBigTable(t testing.TB, s *myServer, c *sql.Conn, db string, rows int) {
 	digits := []string{"seq10 a", "seq10 b", "seq10 c", "seq10 d", "seq10 e", "seq10 f"}
 	expr := "a.n + b.n*10 + c.n*100 + d.n*1000 + e.n*10000 + f.n*100000"
 	myExec(t, c, fmt.Sprintf(`INSERT INTO big SELECT %[1]s, CONCAT('row ', %[1]s, ' 值 ''q'' \\ ;'), (%[1]s) / 7e0,
-		TIMESTAMPADD(SECOND, %[1]s, '2020-01-01 00:00:00.123456'), UNHEX(SHA1(%[1]s)) FROM %[2]s WHERE %[1]s < %[3]d`,
+		TIMESTAMPADD(SECOND, %[1]s, '2020-01-01 00:00:00.123456'), UNHEX(CONCAT(LPAD(HEX(%[1]s), 8, '0'), 'FF00A51A5C27')) FROM %[2]s WHERE %[1]s < %[3]d`,
 		expr, strings.Join(digits, " CROSS JOIN "), rows))
 	myExec(t, c, "DROP TABLE seq10")
 }
@@ -723,6 +740,136 @@ func testMyRandom(t *testing.T, s *myServer) {
 }
 
 func randIdentMy(r *rand.Rand) string {
-	parts := []string{"a", "名", "x y", "q'q", "back`tick", "semi;", "--", "😀", "select", "end"}
+	// MariaDB 的标识符是 utf8mb3，不能含 emoji（数据里照样测 emoji）。
+	parts := []string{"a", "名", "x y", "q'q", "back`tick", "semi;", "--", "é", "select", "end"}
 	return parts[r.Intn(len(parts))] + parts[r.Intn(len(parts))]
+}
+
+// navicatMySQL 是按 Navicat Premium「转储 SQL 文件」格式手写的样例（Navicat 17 带列名，Navicat 16 不带列名且可合并插入）。
+const navicatMySQL = `/*
+ Navicat Premium Dump SQL
+
+ Source Server         : local
+ Source Server Type    : MySQL
+ Source Server Version : 80036 (8.0.36)
+ Source Host           : localhost:3306
+ Source Schema         : demo
+
+ Target Server Type    : MySQL
+ Target Server Version : 80036 (8.0.36)
+ File Encoding         : 65001
+
+ Date: 26/11/2026 12:00:00
+*/
+
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- ----------------------------
+-- Table structure for orders
+-- ----------------------------
+DROP TABLE IF EXISTS ` + "`orders`" + `;
+CREATE TABLE ` + "`orders`" + `  (
+  ` + "`id`" + ` int NOT NULL AUTO_INCREMENT,
+  ` + "`user_id`" + ` bigint UNSIGNED NOT NULL,
+  ` + "`amount`" + ` decimal(10, 2) NULL DEFAULT NULL,
+  PRIMARY KEY (` + "`id`" + `) USING BTREE,
+  INDEX ` + "`fk_user`" + `(` + "`user_id`" + ` ASC) USING BTREE,
+  CONSTRAINT ` + "`fk_user`" + ` FOREIGN KEY (` + "`user_id`" + `) REFERENCES ` + "`users`" + ` (` + "`id`" + `) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Records of orders
+-- ----------------------------
+INSERT INTO ` + "`orders`" + ` VALUES (1, 1, 9.99), (2, 2, 0.01);
+
+-- ----------------------------
+-- Table structure for users
+-- ----------------------------
+DROP TABLE IF EXISTS ` + "`users`" + `;
+CREATE TABLE ` + "`users`" + `  (
+  ` + "`id`" + ` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
+  ` + "`name`" + ` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '名字',
+  ` + "`flag`" + ` bit(1) NULL DEFAULT NULL,
+  ` + "`avatar`" + ` blob NULL,
+  ` + "`created`" + ` datetime NULL DEFAULT NULL,
+  PRIMARY KEY (` + "`id`" + `) USING BTREE,
+  INDEX ` + "`idx_name`" + `(` + "`name`" + ` ASC) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户 it''s' ROW_FORMAT = Dynamic;
+
+-- ----------------------------
+-- Records of users
+-- ----------------------------
+BEGIN;
+INSERT INTO ` + "`users`" + ` (` + "`id`" + `, ` + "`name`" + `, ` + "`flag`" + `, ` + "`avatar`" + `, ` + "`created`" + `) VALUES (1, 'alice', b'1', 0x89504E470D0A1A0A, '2026-01-01 00:00:00');
+INSERT INTO ` + "`users`" + ` (` + "`id`" + `, ` + "`name`" + `, ` + "`flag`" + `, ` + "`avatar`" + `, ` + "`created`" + `) VALUES (2, 'bob\'s ;\n', b'0', NULL, NULL);
+COMMIT;
+
+-- ----------------------------
+-- View structure for v_users
+-- ----------------------------
+DROP VIEW IF EXISTS ` + "`v_users`" + `;
+CREATE ALGORITHM = UNDEFINED SQL SECURITY DEFINER VIEW ` + "`v_users`" + ` AS select ` + "`users`.`id`" + ` AS ` + "`id`" + `,` + "`users`.`name`" + ` AS ` + "`name`" + ` from ` + "`users`" + `;
+
+-- ----------------------------
+-- Procedure structure for p_count
+-- ----------------------------
+DROP PROCEDURE IF EXISTS ` + "`p_count`" + `;
+delimiter ;;
+CREATE PROCEDURE ` + "`p_count`" + `(OUT n INT)
+BEGIN
+  -- 统计; 用户
+  SELECT COUNT(*) INTO n FROM users;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Triggers structure for table users
+-- ----------------------------
+DROP TRIGGER IF EXISTS ` + "`trg_users`" + `;
+delimiter ;;
+CREATE TRIGGER ` + "`trg_users`" + ` BEFORE INSERT ON ` + "`users`" + ` FOR EACH ROW BEGIN
+  IF NEW.name = '' THEN SET NEW.name = 'anon;'; END IF;
+END
+;;
+delimiter ;
+
+SET FOREIGN_KEY_CHECKS = 1;
+`
+
+func testMyNavicatFile(t *testing.T, s *myServer) {
+	adm := s.conn(t, "", false)
+	dst := s.newDB(t, adm, "nav")
+	res := importMy(t, adm, []byte(navicatMySQL), ImportOptions{TargetDatabase: dst})
+	if res.Format != "navicat" || !res.Complete || res.LemiDump || res.Statements != 18 {
+		t.Fatalf("%+v", res)
+	}
+	c := s.conn(t, dst, false)
+	rows := queryStrings(t, c, "SELECT id, name, HEX(flag+0), HEX(avatar) FROM users ORDER BY id")
+	if len(rows) != 2 || rows[1][1] != "bob's ;\n" || rows[0][3] != "89504E470D0A1A0A" {
+		t.Fatalf("%q", rows)
+	}
+	myExec(t, c, "CALL p_count(@n)", "INSERT INTO users (id, name) VALUES (3, '')")
+	var n int
+	var name string
+	c.QueryRowContext(context.Background(), "SELECT @n").Scan(&n)
+	c.QueryRowContext(context.Background(), "SELECT name FROM users WHERE id = 3").Scan(&name)
+	if n != 2 || name != "anon;" {
+		t.Fatalf("存储过程或触发器不对: %d %q", n, name)
+	}
+	if len(queryStrings(t, c, "SELECT * FROM v_users")) != 3 || len(queryStrings(t, c, "SELECT * FROM orders")) != 2 {
+		t.Fatal("视图或 orders 数据不对")
+	}
+
+	// Navicat 文件在一张表的 BEGIN 与 COMMIT 之间被截断：回滚这张表的数据并报不完整。
+	cut := navicatMySQL[:strings.Index(navicatMySQL, "COMMIT;")]
+	dst2 := s.newDB(t, adm, "navcut")
+	res, err := Import(context.Background(), adm, strings.NewReader(cut), ImportOptions{Dialect: MySQL, TargetDatabase: dst2})
+	if !errors.Is(err, ErrIncomplete) || res.Complete {
+		t.Fatalf("应报 ErrIncomplete，得到 %v %+v", err, res)
+	}
+	if rows := queryStrings(t, s.conn(t, dst2, false), "SELECT COUNT(*) FROM users"); rows[0][0] != "0" {
+		t.Fatalf("未提交的数据应回滚，得到 %v 行", rows)
+	}
 }

@@ -136,14 +136,14 @@ func (s *myServer) dockerClient(t testing.TB, db string, data []byte) {
 	}
 }
 
-func (s *myServer) dockerDump(t testing.TB, db string) []byte {
+func (s *myServer) dockerDump(t testing.TB, extra ...string) []byte {
 	t.Helper()
 	_, dump := s.clientBin()
 	args := []string{"exec", s.container, dump, "-uroot", "-p" + s.password(), "--single-transaction", "--routines", "--triggers", "--events", "--hex-blob", "--default-character-set=utf8mb4"}
 	if !s.ver.mariadb {
 		args = append(args, "--set-gtid-purged=OFF")
 	}
-	args = append(args, db)
+	args = append(args, extra...)
 	cmd := exec.Command("docker", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -331,7 +331,7 @@ func compareDBs(t testing.TB, ca *sql.Conn, dbA string, cb *sql.Conn, dbB string
 		t.FailNow()
 	}
 	for tb := range oa.tables {
-		if skipData[tb] || strings.HasPrefix(oa.tables[tb], "CREATE SEQUENCE") {
+		if skipData[tb] {
 			continue
 		}
 		ra := exactRows(t, ca, dbA, tb, oa.columns[tb])
