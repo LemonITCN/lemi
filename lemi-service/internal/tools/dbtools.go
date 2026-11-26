@@ -571,6 +571,21 @@ func searchSchema(env *Env, args json.RawMessage) (*Result, error) {
 	return &Result{Text: head + b.String()}, nil
 }
 
+// watchCancel 调用被取消（用户停止、MCP 客户端断开）时取消正在执行的语句：MySQL 用另一条连接 KILL QUERY，SQLite 中断。
+func watchCancel(ctx context.Context, cs *conns.Console) func() {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = cs.S.Cancel(cctx)
+			cancel()
+		case <-done:
+		}
+	}()
+	return func() { close(done) }
+}
+
 // QueryOutput 是一次只读查询的完整结果。
 type QueryOutput struct {
 	Columns    []driver.Column
@@ -620,6 +635,7 @@ func (env *Env) RunSelect(a *ConnAccess, db, stmt string) (*QueryOutput, error) 
 		return nil, fail("打开只读会话失败：%s", errText(err))
 	}
 	defer env.Svc.Conns.CloseConsole(cs.ID)
+	defer watchCancel(env.Ctx, cs)()
 	cur := db
 	if cur == "" {
 		cur = cs.S.Database(env.Ctx)
@@ -840,6 +856,7 @@ func explainQuery(env *Env, args json.RawMessage) (*Result, error) {
 		return nil, fail("打开只读会话失败：%s", errText(err))
 	}
 	defer env.Svc.Conns.CloseConsole(cs.ID)
+	defer watchCancel(env.Ctx, cs)()
 	cur := in.DB
 	if cur == "" {
 		cur = cs.S.Database(env.Ctx)
@@ -898,6 +915,7 @@ func executeSQL(env *Env, args json.RawMessage) (*Result, error) {
 		return nil, fail("打开会话失败：%s", errText(err))
 	}
 	defer env.Svc.Conns.CloseConsole(cs.ID)
+	defer watchCancel(env.Ctx, cs)()
 	var stopErr error
 	before := map[string]string{}
 	check := func(ctx context.Context, stmt string, info sqlclass.Info) error {

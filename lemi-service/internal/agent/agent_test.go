@@ -660,3 +660,28 @@ func TestSystemUpdate(t *testing.T) {
 		}
 	}
 }
+
+func TestStopCancelsDatabaseQuery(t *testing.T) {
+	e := setup(t)
+	e.s.Clock = realClock{}
+	c := e.f.SQLite(t, "slow", conns.AIRead, nil)
+	e.p.push(toolReply(call{"run_query", map[string]any{"connection_id": c.ID,
+		"sql": "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n) SELECT COUNT(*) FROM n"}}), textReply("不应该走到这里"))
+	run := e.send("跑个慢查询")
+	deadline := time.Now().Add(5 * time.Second)
+	for len(events(run, "tool_running")) < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(200 * time.Millisecond)
+	start := time.Now()
+	_ = e.s.Stop(e.f.Owner.ID, run.ID)
+	e.wait(run)
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("停止应取消数据库查询而不是等到强制中断：%v", time.Since(start))
+	}
+	ms := e.messages()
+	res := ms[len(ms)-1].Parts[0]
+	if res.Status != StatusInterrupted || strings.Contains(res.Text, "强制中断") {
+		t.Fatalf("查询应被协作取消：%s %s", res.Status, res.Text)
+	}
+}

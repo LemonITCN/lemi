@@ -82,9 +82,14 @@ func init() {
 		a.Set("results", res)
 		return nil
 	}, Start: func(ctx context.Context, a *App) {
+		// 定时任务调度：退出时先停止正在运行的任务并等它们收尾
+		done := make(chan struct{})
 		if tk, ok := a.Get("tasks").(*tasks.Service); ok {
-			go tk.Run(ctx)
+			go func() { tk.Run(ctx); close(done) }()
+		} else {
+			close(done)
 		}
+		defer func() { <-done }()
 		res, _ := a.Get("results").(*results.Store)
 		oa, _ := a.Get("oauth").(*oauth.Service)
 		t := time.NewTicker(time.Hour)
