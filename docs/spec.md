@@ -130,7 +130,7 @@ lemi version
 ### 5.2 Web 防护
 
 - CSRF：所有非 GET 的 /api 请求必须带 `X-Lemi-CSRF` 头，值等于会话绑定的 CSRF 令牌；同时校验 Origin / Referer 与本站一致。
-- 响应头：`Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`；`X-Content-Type-Options: nosniff`；`Referrer-Policy: no-referrer`；`X-Frame-Options: DENY`；`Permissions-Policy` 关闭摄像头/麦克风/定位；HTTPS 下 `Strict-Transport-Security: max-age=31536000`。
+- 响应头：`Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`；`X-Content-Type-Options: nosniff`；`Referrer-Policy: no-referrer`；`X-Frame-Options: DENY`；`Permissions-Policy` 关闭摄像头/麦克风/定位；HTTPS 下 `Strict-Transport-Security: max-age=31536000`。
 - 前端不使用 v-html 渲染不可信内容；Markdown 渲染关闭 HTML，再经 DOMPurify；ECharts option 经服务端白名单清洗（§16.6）；Mermaid securityLevel=strict。
 - WebSocket 校验 Origin 与会话。
 - 请求体默认上限 2 MB（导入与上传接口单独放宽并流式处理）。
@@ -208,7 +208,7 @@ type Info struct {
 ### 7.1 字段
 
 - 通用：名称、颜色、分组文件夹、环境标签（生产 / 测试 / 开发，生产连接整个界面带红色边框）、只读开关（连接级强制只读，所有人包括管理员）、备注。
-- MySQL：主机、端口、用户名、密码、默认库、字符集（默认 utf8mb4）、时区（默认 +00:00 用于读写 TIMESTAMP 一致）、TLS（disable / preferred / required / verify-ca / verify-full，可上传 CA、客户端证书与私钥）、连接超时、白名单额外参数。
+- MySQL：主机、端口、用户名、密码、默认库、字符集（默认 utf8mb4）、会话时区（可选，空表示用服务器默认；TIMESTAMP 列按它显示与写入）、TLS（disable / preferred / required / verify-ca / verify-full，可上传 CA、客户端证书与私钥）、连接超时、白名单额外参数。
 - SQLite：文件（白名单目录内的相对路径，或上传文件的 ID）、只读打开。
 
 ### 7.2 网络通道（可叠加：代理 → SSH → 数据库）
@@ -385,7 +385,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 规则：
 
-- 顺序：表（按名称）→ 数据 → 视图（按依赖拓扑排序）→ 函数 → 存储过程 → 事件 → 触发器。外键靠 FOREIGN_KEY_CHECKS=0。
+- 顺序：表（按名称）与数据 → 函数 → 存储过程 → 视图（按依赖拓扑排序；视图可能调用存储函数，所以放在例程之后）→ 事件 → 触发器。外键靠 FOREIGN_KEY_CHECKS=0。例程、触发器、事件按各自定义时的 sql_mode（事件还有 time_zone）重建。
 - 一致性：导出在 `START TRANSACTION WITH CONSISTENT SNAPSHOT`（REPEATABLE READ）里读取全部数据；非 InnoDB 表给出提示。
 - 值：整数原样；DECIMAL 原样文本；FLOAT/DOUBLE 用往返精确的最短表示；字符串单引号，按 MySQL 规则转义 `\0 \' \" \b \n \r \t \Z \\`；二进制/BLOB 一律 `0x` 十六进制（空值写 `''`）；BIT 写 `b'0101'`；日期时间按服务器返回的文本（含零日期与小数秒）；JSON 写字符串；GEOMETRY 写 `ST_GeomFromWKB(0x..., srid)`；生成列不导出数据，INSERT 写列名列表跳过它们。
 - 选项：每条 INSERT 一行（Navicat 默认）或合并插入（Navicat「扩展插入」，默认每条 ≤ 1 MB）；只结构 / 只数据；选择表；是否包含 DROP。备份默认用合并插入（快几十倍），手动导出默认 Navicat 默认样式。
@@ -397,7 +397,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 ### 11.4 导入器
 
-- 流式切分（§8.4 同一套规则，额外支持 `DELIMITER`/`delimiter` 指令、`/*!40101 ... */` 条件注释按服务器版本保留或丢弃、mysqldump 的 `LOCK TABLES` 头尾）。
+- 流式切分（§8.4 同一套规则，额外支持 `DELIMITER`/`delimiter` 指令；`/*!40101 ... */` 条件注释原样发给服务器，由服务器按版本处理；mysqldump 的 `LOCK TABLES` 头尾）。文件读完时仍处在文件自己开的事务里（被截断）→ 回滚并报错。
 - 执行：单连接；默认每 1000 条语句或 16 MB 提交一次（文件里有 BEGIN/COMMIT 时尊重文件）；可选「出错即停」（默认）或「跳过并记录」。
 - 目标库可改名（文件中出现的 `USE`/库名限定按映射替换）。
 - 进度：已读字节 / 总字节、已执行语句数、当前表；可取消。

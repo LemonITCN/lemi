@@ -201,7 +201,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 }
 
 // ContentSecurityPolicy 前端页面的内容安全策略。
-const ContentSecurityPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+const ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data:; worker-src 'self' blob:; " +
 	"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
